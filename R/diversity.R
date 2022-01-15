@@ -85,7 +85,7 @@ clonalDiversity <- function(df, cloneCall = "gene+nt", chain = "both",
       x.axis <- "x.axis"
       mat[,x.axis] <- 1
     }
-    rownames(mat) <- sort(names(df))
+    rownames(mat) <- mat[,group.by]
   
     melt <- suppressMessages(melt(mat, id.vars = c(group.by, x.axis)))
     values <- str_sort(as.character(unique(melt[,group.by])), 
