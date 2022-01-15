@@ -74,10 +74,10 @@ clonalDiversity <- function(df, cloneCall = "gene+nt", chain = "both",
     colnames(mat) <- c("Shannon", "Inv.Simpson", "Chao", "ACE", "Inv.Pielou")
     mat[,"Inv.Pielou"] <- 1 - mat[,"Inv.Pielou"]
     if (!is.null(group.by)) {
-      mat[,group.by] <- str_split(group.element.uniq, "[.]", simplify = TRUE)[,1]
+      mat[,group.by] <- sort(str_split(group.element.uniq, "[.]", simplify = TRUE)[,1])
     } else {
       group.by <- "Group"
-      mat[,group.by] <- names(df)
+      mat[,group.by] <- sort(names(df))
     }
     if (!is.null(x.axis)) {
       mat[,x.axis] <- str_split(group.element.uniq, "[.]", simplify = TRUE)[,2]
@@ -85,7 +85,7 @@ clonalDiversity <- function(df, cloneCall = "gene+nt", chain = "both",
       x.axis <- "x.axis"
       mat[,x.axis] <- 1
     }
-    rownames(mat) <- names(df)
+    rownames(mat) <- mat[,group.by]
   
     melt <- suppressMessages(melt(mat, id.vars = c(group.by, x.axis)))
     values <- str_sort(as.character(unique(melt[,group.by])), 
