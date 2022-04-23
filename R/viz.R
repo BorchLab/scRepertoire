@@ -30,7 +30,7 @@
 #' @return ggplot of the total or relative unique clonotypes
 quantContig <- function(df, cloneCall = "strict", chain = "both", 
                         scale=FALSE, group.by = NULL, 
-                        split.by = NULL,
+                        split.by = NULL,order=TRUE,
                         exportTable = FALSE) {
     if (length(group.by) > 1) { stop("Only one item in the group.by variable can 
                                     be listed.") }
@@ -77,8 +77,13 @@ quantContig <- function(df, cloneCall = "strict", chain = "both",
         } else { y <- "contigs"
             ylab <- "Unique Clonotypes" } }
     if (exportTable == TRUE) { return(Con.df) }
-    plot <- ggplot(aes(x=Con.df[,x], y=Con.df[,y],
-            fill=as.factor(Con.df[,x])), data = Con.df) +
+    # set the x-axis order the same as input
+    if (order == TRUE){
+        order_x <- Con.df[,x] %>% fct_inorder()}
+    else {
+        order_x <- Con.df[,x]}
+    plot <- ggplot(aes(x=order_x, y=Con.df[,y],
+            fill=order_x), data = Con.df) +
         stat_summary(geom = "errorbar", fun.data = mean_se, 
             position = "dodge", width=.5) + labs(fill = labs) +
         stat_summary(fun=mean, geom="bar", color="black", lwd=0.25)+
