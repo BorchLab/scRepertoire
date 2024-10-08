@@ -461,9 +461,10 @@
                 }else if (is.null(group)){
                     data1 <- data.frame(chain1, val1, names[x], c1)
                     colnames(data1) <- c("length", "CT", "values", "chain")
+		}
                 data <- na.omit(data1)
                 data <- subset(data, CT != "NA" & CT != "")
-                Con.df<- rbind.data.frame(Con.df, data) }}
+                Con.df<- rbind.data.frame(Con.df, data) }
     }
     return(Con.df)
 }
