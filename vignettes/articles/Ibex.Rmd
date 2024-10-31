@@ -103,8 +103,17 @@ MIS.sample <- subset(MIS.sample, BCR.recoverd == "Yes")
 
 #Processing RNA
 DefaultAssay(MIS.sample) <- 'RNA'
+
+### If using Seurat v4, use this code to run PCA. ###
 MIS.sample <- NormalizeData(MIS.sample) %>% FindVariableFeatures() %>% 
   quietBCRgenes() %>% ScaleData() %>% RunPCA(verbose = FALSE)
+
+### If using Seurat v5, comment the above, and uncomment below to run PCA. If using Seurat v5, the object class is "Assay5" instead of "Assay". "RNA" needs to be converted from Assay5 class to Assay class, or else, quietBCRgenes() will give the error "Error in is.factor(x) : no slot of name "var.features" for this object of class "Assay5"" ###
+
+# install.package("scCustomize") # scCustomize v2.1.2 from https://samuel-marsh.github.io/scCustomize/index.html
+# MIS.sample <- Convert_Assay(seurat_object = MIS.sample, assay = "RNA", convert_to = "V3")
+# MIS.sample <- NormalizeData(MIS.sample) %>% FindVariableFeatures() %>% quietBCRgenes() %>% ScaleData() %>% RunPCA(verbose = FALSE)
+
 
 #Processing ADT
 DefaultAssay(MIS.sample) <- 'ADT'
