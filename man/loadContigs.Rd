@@ -12,7 +12,7 @@ of pre-loaded contig data.}
 
 \item{format}{A string specifying the data format. Must be one of:
 "auto", "10X", "AIRR", "BD", "Dandelion", "JSON", "MiXCR", "ParseBio",
-"TRUST4", "WAT3R", or "Immcantation".If "auto", the function attempts
+"TRUST4", "WAT3R", or "Immcantation". If "auto", the function attempts
 automatic format detection.}
 }
 \value{

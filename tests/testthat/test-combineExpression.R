@@ -3,7 +3,7 @@
 test_that("combineExpression works with seurat objects", {
 	data("scRep_example")
 	combined <- getCombined()
-  combined_test <- combineExpression(combined, scRep_example)
+  	combined_test <- combineExpression(combined, scRep_example)
 	
 	#Seurat object test
 	expect_length(combined_test@meta.data, 13)

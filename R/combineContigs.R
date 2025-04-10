@@ -65,11 +65,13 @@ combineTCR <- function(input.data,
                        filterNonproductive = TRUE) {
 
     # rudimentary input checking
-    assert_that(is.character(samples) || is.null(samples))
-    assert_that(is.character(ID) || is.null(ID))
-    assert_that(is.flag(removeNA))
-    assert_that(is.flag(removeMulti))
-    assert_that(is.flag(filterMulti))
+    assert_that(
+        is.character(samples) || is.null(samples),
+        is.character(ID) || is.null(ID),
+        is.flag(removeNA),
+        is.flag(removeMulti),
+        is.flag(filterMulti)
+    )
 
     input.data <- .checkList(input.data)
     input.data <- .checkContigs(input.data)
@@ -107,10 +109,10 @@ combineTCR <- function(input.data,
     for (i in seq_along(out)) {
         data2 <- .makeGenes(cellType = "T", out[[i]])
         Con.df <- .constructConDfAndParseTCR(data2)
-        Con.df <- .assignCT(cellType = "T", Con.df)
+        Con.df <- .assignCT(cellType = "T", Con.df) # the pasting in here is a tiny bit slow
         Con.df[Con.df == "NA_NA" | Con.df == "NA;NA_NA;NA"] <- NA
-        data3 <- merge(data2[,-which(names(data2) %in% c("TCR1","TCR2"))],
-            Con.df, by = "barcode")
+        data3 <- merge.data.frame(data2[,-which(names(data2) %in% c("TCR1","TCR2"))],
+            Con.df, by = "barcode", sort = FALSE)
       
         columns_to_include <- c("barcode")
         # Conditionally add columns based on user input
