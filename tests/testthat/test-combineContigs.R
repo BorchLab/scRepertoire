@@ -7,7 +7,7 @@ test_that("combineTCR works", {
 		input.data  = lapply(contig_list[1:3], head),
 		samples = c("P17B", "P17L", "P18B")
 	)
-	
+
 	expected1 <- getdata("combineContigs", "combineTCR_list_expected")
 	expect_identical(trial1, expected1)
 	
@@ -44,7 +44,6 @@ test_that("combineTCR works", {
 }) 
 
 # TODO combineTCR & combineBCR (need more edge cases, different args, errors, etc.)
-# TODO combineTCR for non-10x formats
 
 test_that("combineBCR works", {
 
