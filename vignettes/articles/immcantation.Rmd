@@ -270,7 +270,7 @@ threshold_output <- findThreshold(dist_heavy$dist_nearest,
                                   progress = TRUE,
                                   method = "gmm", 
                                   model = "gamma-norm",
-                                  cutoff = "user", 
+                                  cutoff = "optimal", 
                                   spc = 0.995)
 threshold_auto <- threshold_output@threshold
 ```

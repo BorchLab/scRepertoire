@@ -120,6 +120,7 @@ The `combineExpandedBCR()` function supports the following parameters:
 | `filterNonproductive` | Remove nonproductive chains if the column exists.                     | `TRUE` |
 
 ```{r tidy = FALSE}
+data("ibex_vdj")
 combined.BCR <- combineExpandedBCR(input.data = list(ibex_vdj),
                                    samples = "Sample1",
                                    filterNonproductive = TRUE)
@@ -136,7 +137,7 @@ A full list of available models is provided below:
 
 ```{r tidy = FALSE}
 model.meta.data <-  read.csv(system.file("extdata", "metadata.csv", 
-                                               package = "Ibex"))[,c(1:2,8)]
+                                         package = "Ibex"))[,c(1:2,8)]
 model.meta.data %>%
   kable("html", escape = FALSE) %>%
   kable_styling(full_width = FALSE) %>%
