@@ -10,7 +10,7 @@ Description: scRepertoire is a toolkit for processing and analyzing single-cell 
 License: MIT + file LICENSE 
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
 biocViews: Software, ImmunoOncology, SingleCell, Classification, Annotation, Sequencing
 Depends: 
      ggplot2, 

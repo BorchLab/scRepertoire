@@ -76,7 +76,7 @@ clonalSizeDistribution <- function(input.data,
                                    exportTable = FALSE, 
                                    palette = "inferno",
                                    ...) {
-  x <- xend <- yend <- mpg_div_hp <- NULL
+  x <- y <- xend <- yend <- mpg_div_hp <- NULL
   input.data <- .dataWrangle(input.data, 
                              group.by, 
                              .theCall(input.data, cloneCall, 

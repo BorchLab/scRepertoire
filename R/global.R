@@ -1,33 +1,12 @@
-.onLoad <- function (libname, pkgname)
-{
-    utils::globalVariables ("barcode")
-    utils::globalVariables ("cdr3")
-    utils::globalVariables ("cdr3_nt")
-    utils::globalVariables ("cdr3_nt1")
-    utils::globalVariables ("cdr3_nt2")
-    utils::globalVariables ("CTaa")
-    utils::globalVariables ("CTnt")
-    utils::globalVariables ("productive")
-    utils::globalVariables ("Clones")
-    utils::globalVariables ("group")
-    utils::globalVariables ("contigType")
-    utils::globalVariables ("include")
-    utils::globalVariables (".") 
-    utils::globalVariables ("Abundance") 
-    utils::globalVariables ("Freq") 
-    utils::globalVariables ("Sample") 
-    utils::globalVariables ("ci_lower") 
-    utils::globalVariables ("ci_upper") 
-    utils::globalVariables ("clone")
-    utils::globalVariables ("cloneSize") 
-    utils::globalVariables ("ncells")
-    utils::globalVariables ("position") 
-    utils::globalVariables ("prop") 
-    utils::globalVariables ("scaled") 
-    utils::globalVariables ("size") 
-    utils::globalVariables ("total") 
-    utils::globalVariables ("value") 
-    utils::globalVariables ("values")
-    utils::globalVariables ("cluster")
-    invisible ()
+.onLoad <- function (libname, pkgname) {
+  utils::globalVariables(c(
+    ".", "Abundance", "CTaa", "CTnt", "Clones", "Freq", "Sample",
+    "barcode", "cdr3", "cdr3_nt", "cdr3_nt1", "cdr3_nt2",
+    "ci_lower", "ci_upper", "clone", "cloneSize",
+    "clonalFrequency", "clonalProportion",
+    "cluster", "contigType", "group", "include", "ncells",
+    "position", "productive", "prop", "scaled", "size",
+    "total", "value", "values"
+  ))
+  invisible ()
 }

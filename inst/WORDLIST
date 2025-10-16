@@ -98,7 +98,6 @@ Immunarch
 Inv
 JC
 JS
-JSON
 Jaccard
 Jgene
 KEGG
@@ -118,6 +117,7 @@ McPAS
 MiXCR
 Morisita
 Morisita's
+MultiUMAP
 NES
 NG
 Nebulosa
@@ -137,14 +137,11 @@ ParseBio
 Physicochemical
 Pielou
 Pielou's
-Precomputed
-Preprocessed
 ProjectTIL
 ProtFP
 Readded
 Rebasing
 Rebumping
-Repo
 SCE
 SHM
 SRA
@@ -214,7 +211,6 @@ adjacencyMatrix
 airr
 al
 alakazam
-allelic
 alluvialClones
 alluvialClonotype
 alluvialClonotypes
@@ -290,14 +286,12 @@ createHTOContigList
 crucianiProperties
 csv
 cubature
-customizable
 dandelionR
 de
 densityEnrichment
 dev
 df
 dgCMatrix
-dir
 distanc
 doubletons
 downsample
@@ -429,7 +423,6 @@ percentGenes
 percentKmer
 percentVJ
 performNormalization
-phenotypes
 physicochemical
 pielou
 pkgdown
@@ -451,7 +444,6 @@ readRDS
 reclustering
 regressClonotype
 relevel
-repo
 ridgeEnrichment
 runEscape
 runIbex
@@ -507,7 +499,6 @@ umap
 unmutated
 unreturned
 variational
-viridis
 visVgene
 visualise
 vizGene

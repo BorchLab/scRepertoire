@@ -2,6 +2,7 @@
 
 ## BUG FIXES
 * Fixed chain handling for BCR genes in `percentGeneUsage()` and propagates to wrappers: `percentGenes`, `percentVJ` and `vizGenes`
+* Fix `percentKmer()` handling of motifs with ";", now set to conditional removal
 
 # scRepertoire VERSION 2.5.6
 
