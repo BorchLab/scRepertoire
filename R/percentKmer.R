@@ -89,7 +89,9 @@ percentKmer <- function(input.data,
   
   # Collecting motifs into a matrix
   unique.motifs <- unique(unlist(lapply(motif.list, `[`, , 1)))
-  unique.motifs <- unique.motifs[-grep(";", unique.motifs)] #remove seq deliminator
+  if(any(grepl(";", unique.motifs))) {
+    unique.motifs <- unique.motifs[-grep(";", unique.motifs)] #remove seq deliminator
+  }
   mat <- matrix(0, ncol = length(unique.motifs), nrow = length(input.data))
   colnames(mat) <- unique.motifs
   rownames(mat) <- names(input.data)
@@ -134,7 +136,6 @@ percentKmer <- function(input.data,
             scale_fill_gradientn(name = "Proportion", colors = .colorizer(palette,21)) +
             .themeRepertoire(...) + 
             coord_flip() + 
-            theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1),
-                  axis.title = element_blank())
+            theme(axis.title = element_blank())
   return(plot)
 }
