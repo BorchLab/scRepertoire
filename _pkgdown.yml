@@ -56,11 +56,11 @@ navbar:
       href: articles/Trex.html
     - text: Combining Deep Learning and BCRs with Ibex
       href: articles/Ibex.html
-    - text: Single-cell Gene Set Enrichment Analysis
-      href: articles/Running_Escape.html
     - text: '-------'
     - text: "Other Workflow Integrations"
-    - text: "Combining Immcantation and scRepertoire"
+    - text: Single-cell Gene Set Enrichment Analysis
+      href: articles/Running_Escape.html
+    - text: Combining Immcantation and scRepertoire
       href: articles/immcantation.html
     - text: TCRpheno applied to T cell fate
       href: articles/tcrpheno.html
