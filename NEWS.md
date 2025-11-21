@@ -2,6 +2,9 @@
 
 Update to 2.6.0 to match Bioconductor Release 3.22 on 2025/10/30
 
+## UNDERLYING CHANGES
+* Temporarily-requiring Seurat version < 5.3.0 due to bug in DimPlot()
+
 ## BUG FIXES
 * Fixed order.by issue in `positionalProperty()`
 * Fixed individual chain call for `combineExpression()`

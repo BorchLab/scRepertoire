@@ -16,7 +16,7 @@ vignette: >
 ---
 
 ```{r, echo=FALSE, results="hide", message=FALSE, warning=FALSE}
-knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE)
+knitr::opts_chunk$set(error=FALSE, message=FALSE, warning=FALSE, tidy = FALSE)
 library(BiocStyle)
 library(scater)
 library(Seurat)
@@ -211,7 +211,8 @@ head(combined.BCR.clustered[[1]][, c("barcode", "CTstrict", "IGH", "cdr3_aa1")])
 
 ### Filtering and Cleaning Data
 
-```combineBCR()``` includes several arguments to filter and clean the contig data during processing.
+
+`combineBCR()` includes several arguments to filter and clean the contig data during processing.
 * `filterNonproductive = TRUE` (Default): Removes any contigs that are not classified as productive, ensuring that only functional receptor chains are included in the analysis.
 * `filterMulti = TRUE` (Default): For cells with more than one heavy or light chain detected, this automatically selects the chain with the highest UMI count (read abundance) and discards the others. This helps resolve cellular multiplets or technical artifacts.
 
@@ -685,7 +686,7 @@ Key Parameters for `percenVJ()`:
 * `chain`: Specifies the immune receptor chain (e.g., **"TRB"**, **"TRA"**, **"IGH"**, **"IGL"**). This dictates which V and J gene segments are analyzed (e.g., **TRBV** and **TRBJ** for `chain` = "TRB")
 
 ```{r}
-percentVJ(combined.TCR,
+percentVJ(combined.TCR[1:2],
           chain = "TRB",
           summary.fun = "percent")
 ```
@@ -985,7 +986,7 @@ clonalSizeDistribution(combined.TCR,
                        method= "ward.D2")
 ```
 
-```clonalSizeDistribution()``` offers a sophisticated approach to modeling immune repertoire composition, distinguishing between the distribution of rare and expanded clones. By applying a spliced statistical model, it provides a more accurate representation of the repertoire's underlying clonal architecture, enabling robust comparisons and a deeper understanding of immune system dynamics.
+`clonalSizeDistribution()` offers a sophisticated approach to modeling immune repertoire composition, distinguishing between the distribution of rare and expanded clones. By applying a spliced statistical model, it provides a more accurate representation of the repertoire's underlying clonal architecture, enabling robust comparisons and a deeper understanding of immune system dynamics.
 
 ## clonalOverlap: Exploring Sequence Overlap
 
@@ -1048,9 +1049,9 @@ To mitigate this issue, a common strategy is to exclude VDJ genes from the set o
 
 ### Functions to Exclude VDJ Genes
 
-* ```quietVDJgenes()``` – Removes both TCR and BCR VDJ genes.
-* ```quietTCRgenes()``` – Removes only TCR VDJ genes.
-* ```quietBCRgenes()``` – Removes only BCR VDJ genes, but retains BCR VDJ pseudogenes in the variable features.
+* `quietVDJgenes()` – Removes both TCR and BCR VDJ genes.
+* `quietTCRgenes()` – Removes only TCR VDJ genes.
+* `quietBCRgenes()` – Removes only BCR VDJ genes, but retains BCR VDJ pseudogenes in the variable features.
 
 Let's first check the top 10 variable features in the scRep_example Seurat object before any removal:
 
@@ -1244,8 +1245,8 @@ scRep_example <- highlightClones(scRep_example,
                                  "CARKVRDSSYKLIF_CASSDSGYNEQFF"))
 
 Seurat::DimPlot(scRep_example, group.by = "highlight") + 
-  guides(color=guide_legend(nrow=3,byrow=TRUE)) + 
-  ggplot2::theme(plot.title = element_blank(), 
+   guides(color=guide_legend(nrow=3,byrow=TRUE)) + 
+   ggplot2::theme(plot.title = element_blank(), 
                  legend.position = "bottom")
 ```
 
@@ -1514,7 +1515,7 @@ scRep_example <- clonalCluster(scRep_example,
 num_clusters <- length(unique(na.omit(scRep_example$TRA.Cluster)))
 cluster_colors <- hcl.colors(n = num_clusters, palette = "inferno")
 
-DimPlot(scRep_example, group.by = "TRA.Cluster") +
+Seurat::DimPlot(scRep_example, group.by = "TRA.Cluster") +
   scale_color_manual(values = cluster_colors, na.value = "grey") + 
   NoLegend()
 ```
@@ -1601,7 +1602,6 @@ graph_walktrap <- clonalCluster(combined.TCR[c(1,2)],
 
 # Compare the number of clusters found
 length(unique(V(graph_walktrap)$cluster))
-
 ```
 
 Overall, `clonalCluster()` is a versatile function for defining and analyzing clonal relationships based on sequence similarity. It allows researchers to move beyond exact sequence matches, providing a more comprehensive understanding of clonal families. The ability to customize parameters like `threshold`, `chain` selection, and `group.by` ensures adaptability to diverse research questions. Furthermore, the option to export `igraph` objects or sparse adjacency matrices provides advanced users with the tools for in-depth network analysis.
