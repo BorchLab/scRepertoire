@@ -47,7 +47,7 @@ Suggests:
     rmarkdown,
     scales,
     scater,
-    Seurat (< 5.3.0),
+    Seurat (<= 5.2.1),
     spelling,
     testthat (>= 3.0.0)
 VignetteBuilder: knitr
