@@ -112,7 +112,12 @@ clonalHomeostasis <- function(input.data,
                         times = varying_cols,
                         idvar = "Var1",
                         direction = "long")
-    
+
+    # Order the clonal groups by their proportion bins (largest to smallest)
+    # rather than alphabetically. varying_cols follows the clone.size order
+    # (ascending), so reversing gives Hyperexpanded -> Rare.
+    mat_melt$category <- factor(mat_melt$category, levels = rev(varying_cols))
+
     if(!is.null(order.by)) {
       mat_melt <- .orderingFunction(vector = order.by,
                                     group.by = "Var1", 

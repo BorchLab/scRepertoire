@@ -1,3 +1,10 @@
+# scRepertoire VERSION 2.9.2
+
+## BUG FIXES
+
+* `getCirclize()` self-links (the diagonal, `include.self = TRUE`) no longer always return 0. The private-clone subtraction counted zero-count clone-by-group rows from the underlying cross-tabulation as shared, cancelling the full count. It now restricts to clones actually observed (`n > 0`) in other groups, so the diagonal correctly reports each group's private clones. The same `n > 0` guard was applied to the `n.shared` statistic in the `include.metadata = TRUE` output.
+* `clonalHomeostasis()` now orders the clonal groups by their proportion bins (`Hyperexpanded -> Large -> Medium -> Small -> Rare`) instead of alphabetically. The fill categories were being sorted as a character vector, which placed `Rare` before `Small`.
+
 # scRepertoire VERSION 2.9.1
 
 ## NEW FEATURES
