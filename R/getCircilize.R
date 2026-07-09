@@ -161,7 +161,8 @@ getCirclize <- function(sc.data,
       if(symmetric && pair1 == pair2) {
         # For self-links in symmetric mode, subtract shared clones
         tmp <- clone.table[clone.table[[clone.call]] %in% common &
-                           clone.table[,1] != pair1, ]
+                           clone.table[,1] != pair1 &
+                           clone.table[["n"]] > 0, ]
         shared.clones <- unique(tmp[[clone.call]])
         value <- value - length(shared.clones)
       }
@@ -243,8 +244,8 @@ getCirclize <- function(sc.data,
     n.clones <- nrow(sector.clones[sector.clones$n > 0, ])
 
     # Count shared clones (appearing in other sectors)
-    sector.clone.ids <- sector.clones[[clone.call]]
-    other.clones <- clone.table[clone.table[,1] != s, clone.call]
+    sector.clone.ids <- sector.clones[sector.clones$n > 0, clone.call]
+    other.clones <- clone.table[clone.table[,1] != s & clone.table$n > 0, clone.call]
     n.shared <- length(intersect(sector.clone.ids, other.clones))
 
     # Simple expansion metric: 1 - (unique clones / total cells)
