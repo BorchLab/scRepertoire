@@ -97,6 +97,30 @@ between specific pairs of tissues or clusters, respectively.
 (e.g., \code{pairwise = "Type"}).}
 \item{For transition (\code{index = "tran"}), set \code{pairwise} to \code{"cluster"}.}
 }
+
+The function loops over every \strong{unordered} pair of clusters (or types),
+subsets the cells to that pair, and recomputes the index inside the resulting
+2-category subspace. The exported table has one row per pair per anchor
+category:
+\itemize{
+\item{\strong{group:}} the \code{group.by} level the row was computed in.
+\item{\strong{cluster:}} the category the score is anchored to, i.e. the
+one supplying the cell weights.
+\item{\strong{partner:}} for \code{index = "tran"}, the other member of the
+pair.
+\item{\strong{comparison:}} the pair itself, always written in sorted
+order so the same pair carries the same label in every group.
+\item{\strong{value:}} the cell-weighted mean clonal entropy over the pair.
+With two categories it is bounded 0-1, where 0 means the clones
+making up the anchor are exclusive to it and 1 means every clone is
+split evenly with the partner.
+}
+
+The pair label carries \strong{no direction}: \code{"1 vs 3"} is not "from 1 to 3". Two
+rows of the same pair can differ because each is weighted by a different
+anchor, not because a transition was measured one way or the other. STARTRAC
+indices are a static description of clonal sharing and cannot, on their own,
+order that sharing in time.
 }
 \examples{
 # Getting the combined contigs

@@ -107,12 +107,37 @@ Another feature of `StartracDiversity()` is the ability to perform pairwise comp
 
 ```{r}
 # # Calculate pairwise migration between tissues
-StartracDiversity(scRep_example, 
-                  type = "Type", 
+StartracDiversity(scRep_example,
+                  type = "Type",
                   group.by = "Patient",
                   index = "migr",
                   pairwise = "Type")
 ```
+
+### Pairwise Transition Analysis
+
+Setting `index = "tran"` and `pairwise = "cluster"` does the same thing across clusters. The function walks every unordered pair of clusters, subsets the cells to that pair, and recomputes the transition index inside that two-cluster subspace.
+
+```{r}
+StartracDiversity(scRep_example,
+                  type = "Type",
+                  group.by = "Patient",
+                  index = "tran",
+                  pairwise = "cluster",
+                  export.table = TRUE)[1:6, ]
+```
+
+Reading the table:
+
+* `group` - the `group.by` level the row was calculated in.
+* `cluster` - the cluster the score is anchored to, meaning the one supplying the cell weights.
+* `partner` - the other cluster in the pair.
+* `comparison` - the pair itself. Labels are always sorted, so the same pair reads the same way in every group.
+* `value` - the cell-weighted mean clonal entropy over the pair. With only two categories it runs from 0 to 1. A `0` means the clones making up the anchor cluster are exclusive to it. A `1` means every clone in the anchor is split evenly with the partner.
+
+Two rows exist for each pair because each cluster takes a turn as the anchor. They usually differ, and that asymmetry comes from the weighting rather than from any direction of travel. A pair labeled `1 vs 3` is not a claim that cells moved from cluster 1 to cluster 3.
+
+This matters if you are grouping by time point. STARTRAC describes clonal sharing as it stands, so it cannot order that sharing in time on its own. To ask whether a clone moved from a cluster at t1 into a different cluster at t2, track clone identity across the time points directly, for example with `alluvialClones()` or by tabulating each clone's cluster membership per time point.
 
 ## clonalBias
 

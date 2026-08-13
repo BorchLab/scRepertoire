@@ -1,9 +1,22 @@
+# scRepertoire VERSION 2.9.3
+
+## BUG FIXES
+
+* `StartracDiversity(pairwise = ...)` labels each pair consistently across groups (resolves #585). Pairs were built from `unique()`, which returns categories in order of first appearance, so the same unordered pair was written `"1 vs 3"` in one `group.by` level and `"3 vs 1"` in the next. Categories are now sorted alphanumerically before pairing, and the label carries no direction.
+* The `group` column of the `StartracDiversity()` export table now holds the `group.by` level rather than the list position (`"1"`, `"2"`, ...). This affects both the standard and pairwise output.
+
+## UNDERLYING CHANGES
+
+* `StartracDiversity(index = "tran", pairwise = "cluster")` gains a `partner` column naming the other member of the pair, so the anchor and its comparator can be read without parsing the label. The accompanying plot now facets by anchor cluster with one box per partner. Previously it faceted on the first token of the pair label, which mixed several pairs into a single box. The pairwise export table is also column-ordered `group`, `cluster`, `partner`, `comparison`, `variable`, `value`.
+* The documentation for `StartracDiversity()` and the STARTRAC vignette section now spell out what each column of the pairwise table means and note that pairs are unordered, so the index cannot be read as a directional or time-ordered transition.
+
 # scRepertoire VERSION 2.9.2
 
 ## BUG FIXES
 
 * `getCirclize()` self-links (the diagonal, `include.self = TRUE`) no longer always return 0. The private-clone subtraction counted zero-count clone-by-group rows from the underlying cross-tabulation as shared, cancelling the full count. It now restricts to clones actually observed (`n > 0`) in other groups, so the diagonal correctly reports each group's private clones. The same `n > 0` guard was applied to the `n.shared` statistic in the `include.metadata = TRUE` output.
 * `clonalHomeostasis()` now orders the clonal groups by their proportion bins (`Hyperexpanded -> Large -> Medium -> Small -> Rare`) instead of alphabetically. The fill categories were being sorted as a character vector, which placed `Rare` before `Small`.
+
 
 # scRepertoire VERSION 2.9.1
 

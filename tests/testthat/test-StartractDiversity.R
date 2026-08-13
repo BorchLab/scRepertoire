@@ -92,9 +92,32 @@ test_that("Pairwise calculations are correct", {
                                              pairwise = "cluster",
                                              export.table = TRUE)
   expect_s3_class(pairwise_tran_results, "data.frame")
-  expect_true(all(c("group", "cluster", "value", "comparison") %in% names(pairwise_tran_results)))
+  expect_true(all(c("group", "cluster", "partner", "value", "comparison") %in% names(pairwise_tran_results)))
   expect_true(all(grepl("\\w vs \\w", pairwise_tran_results$comparison)))
   expect_true(is.numeric(pairwise_tran_results$value))
+
+  # Pairs are unordered, so a given pair must carry one label in every group
+  pair_key <- vapply(strsplit(pairwise_tran_results$comparison, " vs "),
+                     function(x) paste(sort(x), collapse = "|"), character(1))
+  expect_equal(length(unique(pairwise_tran_results$comparison)),
+               length(unique(pair_key)))
+
+  # The anchor and its partner are the two members of the labelled pair
+  members <- strsplit(pairwise_tran_results$comparison, " vs ")
+  expect_true(all(mapply(function(m, cl, pt) setequal(m, c(cl, pt)),
+                         members,
+                         pairwise_tran_results$cluster,
+                         pairwise_tran_results$partner)))
+
+  # Test 3: group carries the group.by level, not the list position
+  expect_setequal(unique(pairwise_tran_results$group), unique(scRep_example$Patient))
+  expect_setequal(unique(pairwise_migr_results$group), unique(scRep_example$Patient))
+
+  standard_results <- StartracDiversity(scRep_example,
+                                        type = "Type",
+                                        group.by = "Patient",
+                                        export.table = TRUE)
+  expect_setequal(unique(standard_results$group), unique(scRep_example$Patient))
 })
 
 
