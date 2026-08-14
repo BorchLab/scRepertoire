@@ -30,11 +30,35 @@
 #' The `pairwise` parameter enables the calculation of migration or transition
 #' between specific pairs of tissues or clusters, respectively.
 #' \itemize{
-#'   \item{For migration (`index = "migr"`), set `pairwise` to the `type` column 
+#'   \item{For migration (`index = "migr"`), set `pairwise` to the `type` column
 #'         (e.g., `pairwise = "Type"`).}
 #'   \item{For transition (`index = "tran"`), set `pairwise` to `"cluster"`.}
 #' }
-#' 
+#'
+#' The function loops over every **unordered** pair of clusters (or types),
+#' subsets the cells to that pair, and recomputes the index inside the resulting
+#' 2-category subspace. The exported table has one row per pair per anchor
+#' category:
+#' \itemize{
+#'   \item{\strong{group:}} the `group.by` level the row was computed in.
+#'   \item{\strong{cluster:}} the category the score is anchored to, i.e. the
+#'         one supplying the cell weights.
+#'   \item{\strong{partner:}} for `index = "tran"`, the other member of the
+#'         pair.
+#'   \item{\strong{comparison:}} the pair itself, always written in sorted
+#'         order so the same pair carries the same label in every group.
+#'   \item{\strong{value:}} the cell-weighted mean clonal entropy over the pair.
+#'         With two categories it is bounded 0-1, where 0 means the clones
+#'         making up the anchor are exclusive to it and 1 means every clone is
+#'         split evenly with the partner.
+#' }
+#'
+#' The pair label carries **no direction**: `"1 vs 3"` is not "from 1 to 3". Two
+#' rows of the same pair can differ because each is weighted by a different
+#' anchor, not because a transition was measured one way or the other. STARTRAC
+#' indices are a static description of clonal sharing and cannot, on their own,
+#' order that sharing in time.
+#'
 #' @examples
 #' # Getting the combined contigs
 #' combined <- combineTCR(contig_list, 
@@ -178,33 +202,42 @@ StartracDiversity <- function(sc.data,
       .calculateIndices(subset_data, index)
     }
   })
-  
+  names(mat.list) <- as.character(group.levels)
+
   mat <- bind_rows(mat.list, .id = "group")
   if (nrow(mat) == 0) {
     warning("No data available for calculation. Returning NULL.")
     return(NULL)
   }
-  
+
   if(!is.null(pairwise)) {
     mat$variable <- index[1]
     mat <- mat[!is.nan(mat$value),]
+    col.order <- intersect(c("group", "cluster", "partner", "comparison",
+                             "variable", "value"), colnames(mat))
+    mat <- mat[, c(col.order, setdiff(colnames(mat), col.order)), drop = FALSE]
+    rownames(mat) <- NULL
   }
-  
+
   if (export.table) {
     return(mat)
   }
   # Plotting logic
   if (!is.null(pairwise)) {
     
-    if (pairwise == "cluster") {
-        num_colors <- length(unique(mat[["cluster"]]))
-        mat$cluster2 <- sapply(strsplit(mat$comparison, " "), `[`, 1)
-        mat$cluster2 <- factor(mat$cluster2, levels = .alphanumericalSort(mat$cluster2))
-        mat$cluster <- factor(mat$cluster, levels = .alphanumericalSort(mat$cluster))
-        plot <- ggplot(mat, aes(x = cluster, y = .data$value)) +
-          geom_boxplot(aes(fill = cluster), outlier.alpha = 0, na.rm = TRUE) +
-          labs(y = "Pairwise Index Score", x = "Cluster") + 
-          facet_grid(cluster2 ~ ., scales = "free_y") 
+    # "partner" is only present when the pairing was over clusters, which is
+    # the one case where the anchor is itself a member of the pair
+    if ("partner" %in% colnames(mat)) {
+        # One facet per anchor cluster, one box per partner within it, so every
+        # box is a single unambiguous pair summarized across the group.by levels
+        cluster.levels <- .alphanumericalSort(c(mat$cluster, mat$partner))
+        num_colors <- length(cluster.levels)
+        mat$cluster <- factor(mat$cluster, levels = cluster.levels)
+        mat$partner <- factor(mat$partner, levels = cluster.levels)
+        plot <- ggplot(mat, aes(x = .data$partner, y = .data$value)) +
+          geom_boxplot(aes(fill = .data$partner), outlier.alpha = 0, na.rm = TRUE) +
+          labs(y = "Pairwise Index Score", x = "Partner Cluster") +
+          facet_wrap(~ cluster, labeller = as_labeller(function(x) paste("Anchor:", x)))
     } else {
       col_name <- colnames(mat)[grepl("comparison", colnames(mat))]
       num_colors <- length(unique(mat[[col_name]]))
@@ -285,7 +318,9 @@ StartracDiversity <- function(sc.data,
       calIndex.matrix$tran <- tran_matrix[,1]
     }
   } else {
-    # If no clonotypes, set indices to NA
+    # If no clonotypes, every index is undefined. expa is overwritten because
+    # 1 - (0 / -Inf) evaluates to a spurious 1 on an empty cluster
+    if ("expa" %in% indices) calIndex.matrix$expa <- NA
     if ("migr" %in% indices) calIndex.matrix$migr <- NA
     if ("tran" %in% indices) calIndex.matrix$tran <- NA
   }
@@ -304,14 +339,18 @@ StartracDiversity <- function(sc.data,
 .calculatePairwiseIndices <- function(processed, index, pairwise_col) {
   if (nrow(processed) < 2) return(NULL)
   
-  unique_items <- unique(processed[[pairwise_col]])
+  # Sorting keeps the pair label identical across group.by levels - unique()
+  # alone returns categories in order of first appearance, so the same
+  # unordered pair would be written "1 vs 3" in one group and "3 vs 1" in the next
+  unique_items <- .alphanumericalSort(as.character(processed[[pairwise_col]]))
   if (length(unique_items) < 2) return(NULL)
-  
+
   pairs <- combn(unique_items, 2, simplify = FALSE)
-  
+
   pairwise_results <- lapply(pairs, function(p) {
-    pair_data <- processed[processed[[pairwise_col]] %in% p,]
-    
+    pair_data <- processed[as.character(processed[[pairwise_col]]) %in% p,]
+    pair_data <- droplevels(pair_data)
+
     if (index == "migr") {
       dist_table <- table(pair_data[,c("clone.id", "loc")])
       clonotype_dist_cluster <- table(pair_data[,c("clone.id", "cluster")])
@@ -336,8 +375,16 @@ StartracDiversity <- function(sc.data,
     
     result_matrix <- t(weights_mtx_filtered) %*% as.matrix(clonotype_data_filtered$value)
     
-    res <- data.frame(cluster = rownames(result_matrix), value = result_matrix[,1])
+    res <- data.frame(cluster = rownames(result_matrix),
+                      value = result_matrix[,1],
+                      stringsAsFactors = FALSE)
     res$comparison <- paste(p, collapse = " vs ")
+    # For transition the anchor is itself a member of the pair, so the other
+    # member can be named outright rather than parsed out of the label
+    if (identical(pairwise_col, "cluster")) {
+      res$partner <- ifelse(res$cluster == p[1], p[2], p[1])
+    }
+    rownames(res) <- NULL
     return(res)
   })
   
