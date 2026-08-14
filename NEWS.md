@@ -4,6 +4,7 @@
 
 * `StartracDiversity(pairwise = ...)` labels each pair consistently across groups (resolves #585). Pairs were built from `unique()`, which returns categories in order of first appearance, so the same unordered pair was written `"1 vs 3"` in one `group.by` level and `"3 vs 1"` in the next. Categories are now sorted alphanumerically before pairing, and the label carries no direction.
 * The `group` column of the `StartracDiversity()` export table now holds the `group.by` level rather than the list position (`"1"`, `"2"`, ...). This affects both the standard and pairwise output.
+* `StartracDiversity()` reports `expa` as `NA` for a group with clusters but no recovered clonotypes. `1 - (0 / -Inf)` was evaluating to `1`, which read as a fully expanded cluster. `migr` and `tran` were already `NA` in this case.
 
 ## UNDERLYING CHANGES
 

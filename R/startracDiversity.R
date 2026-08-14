@@ -318,7 +318,9 @@ StartracDiversity <- function(sc.data,
       calIndex.matrix$tran <- tran_matrix[,1]
     }
   } else {
-    # If no clonotypes, set indices to NA
+    # If no clonotypes, every index is undefined. expa is overwritten because
+    # 1 - (0 / -Inf) evaluates to a spurious 1 on an empty cluster
+    if ("expa" %in% indices) calIndex.matrix$expa <- NA
     if ("migr" %in% indices) calIndex.matrix$migr <- NA
     if ("tran" %in% indices) calIndex.matrix$tran <- NA
   }
