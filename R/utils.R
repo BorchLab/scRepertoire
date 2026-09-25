@@ -25,7 +25,18 @@
   # Check if old argument was explicitly provided (not NULL/missing)
   old_provided <- !is.null(old_arg)
   new_provided <- !is.null(new_arg)
-  
+
+  # lifecycle decides whether a deprecation is "direct" (worth telling this
+  # caller about) from `user_env`, which defaults to two frames above the
+  # signaller. That default assumes the exported function calls lifecycle
+  # itself; here the call is one frame deeper, so the default lands on the
+  # exported function's own frame inside this namespace and every deprecation
+  # is classified as indirect. deprecate_soft() is then silent for everyone and
+  # deprecate_warn() misattributes the source and throttles to once per eight
+  # hours. Point `user_env` at the frame that actually called the exported
+  # function: two frames above this helper.
+  user_env <- rlang::caller_env(2L)
+
   if (old_provided && new_provided) {
     # Both provided - warn and use new
     lifecycle::deprecate_warn(
@@ -33,7 +44,8 @@
       paste0(func_name, "(", old_name, ")"),
       paste0(func_name, "(", new_name, ")"),
       details = paste0("Both `", old_name, "` and `", new_name,
-                       "` were provided. Using `", new_name, "`.")
+                       "` were provided. Using `", new_name, "`."),
+      user_env = user_env
     )
     return(new_arg)
   } else if (old_provided) {
@@ -41,7 +53,8 @@
     lifecycle::deprecate_soft(
       version,
       paste0(func_name, "(", old_name, ")"),
-      paste0(func_name, "(", new_name, ")")
+      paste0(func_name, "(", new_name, ")"),
+      user_env = user_env
     )
     return(old_arg)
   } else if (new_provided) {
@@ -668,6 +681,30 @@
     chain <- "Light"
   }
   return(chain)
+}
+
+# Infer whether a combined object holds TCR or BCR data by looking at the gene
+# calls in CTgene. Used where a chain argument is receptor-agnostic (e.g.
+# `chain = "both"`) and the two chain names have to be resolved from the data.
+# Returns "B" or "T"; falls back to "T" when CTgene is missing or uninformative.
+.detectReceptor <- function(input.data) {
+  genes <- if (.is.seurat.or.se.object(input.data)) {
+    .grabMeta(input.data)[["CTgene"]]
+  } else if (inherits(input.data, "list")) {
+    unlist(lapply(input.data, function(x) {
+      if ("CTgene" %in% colnames(x)) x[["CTgene"]] else NULL
+    }), use.names = FALSE)
+  } else {
+    as.data.frame(input.data)[["CTgene"]]
+  }
+
+  genes <- genes[!is.na(genes)]
+  if (length(genes) == 0L) {
+    return("T")
+  }
+  # A few hundred rows are plenty to tell IG from TR
+  genes <- genes[seq_len(min(length(genes), 1000L))]
+  if (sum(grepl("IG[HKL]", genes)) > sum(grepl("TR[ABGD]", genes))) "B" else "T"
 }
 
 # helper for .theCall # Qile: on second thought - converting to x to lowercase may be a bad idea...

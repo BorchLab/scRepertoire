@@ -266,3 +266,47 @@ test_that(".lengthDF works correctly", {
 
 
 
+
+# --- .deprecate_arg ----------------------------------------------------------
+
+test_that(".deprecate_arg returns the right value in each branch", {
+  # Only the new argument
+  expect_equal(.deprecate_arg(NULL, "new", "old_nm", "new_nm", "fn"), "new")
+  # Neither argument falls back to the default
+  expect_equal(.deprecate_arg(NULL, NULL, "old_nm", "new_nm", "fn",
+                              default = "dflt"), "dflt")
+  expect_null(.deprecate_arg(NULL, NULL, "old_nm", "new_nm", "fn"))
+  # Only the old argument is honoured. Signalling depends on the call depth
+  # lifecycle sees, so it is covered separately below through an exported
+  # function rather than asserted on this direct call.
+  expect_equal(
+    suppressWarnings(.deprecate_arg("old", NULL, "old_nm", "new_nm", "fn")),
+    "old"
+  )
+  # Both provided prefers the new one
+  expect_equal(
+    suppressWarnings(.deprecate_arg("old", "new", "old_nm", "new_nm", "fn")),
+    "new"
+  )
+})
+
+# A minimal combined object for the deprecation-routing test below
+mock_combined_deprecate <- combineTCR(contig_list[1:2], samples = c("A", "B"))
+
+test_that("deprecation warnings reach the calling user, not just the test harness", {
+  # lifecycle decides whether to signal from `user_env`. Its default lands two
+  # frames above the signaller, which is .deprecate_arg's caller -- a frame
+  # inside this namespace -- so every deprecation was classified as indirect and
+  # deprecate_soft() stayed silent for real users. TESTTHAT_PKG hid that during
+  # testing, because from_testthat() also counts as direct. Unset it and call
+  # from the global environment, which is what a user's script looks like.
+  # "warning" defeats the once-per-session throttle without bypassing the
+  # directness check, which is what this test is about.
+  withr::local_envvar(TESTTHAT_PKG = NA)
+  withr::local_options(lifecycle_verbosity = "warning")
+
+  caller <- function(x) clonalBin(x, cloneCall = "gene")
+  environment(caller) <- globalenv()
+
+  expect_warning(caller(mock_combined_deprecate), regexp = "cloneCall.*deprecated")
+})
