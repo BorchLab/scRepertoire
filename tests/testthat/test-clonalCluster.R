@@ -17,6 +17,9 @@ combined <- lapply(combined, function(x) {
   x
 })
 
+# BCR contigs for the receptor-specific tests below
+BCR_SOURCE <- read.csv("https://www.borch.dev/uploads/contigs/b_contigs.csv")
+
 # --- Existing Tests (Preserved) ---
 
 test_that("Basic functionality and default output structure", {
@@ -107,4 +110,92 @@ test_that("Normalization parameters function correctly", {
   # normalize = "length" (mean length)
   res_len <- clonalCluster(combined[1], normalize = "length", threshold = 0.1)
   expect_true("TRB.Cluster" %in% names(res_len[[1]]))
+})
+# --- Receptor detection, group.by column naming, and notice handling ---------
+
+test_that(".detectReceptor distinguishes BCR from TCR input", {
+  expect_equal(.detectReceptor(combined), "T")
+
+  bcr <- combineBCR(BCR_SOURCE, samples = "P1", call.related.clones = FALSE)
+  expect_equal(.detectReceptor(bcr), "B")
+
+  # No CTgene to inspect falls back to the TCR chain names
+  expect_equal(.detectReceptor(list(data.frame(barcode = "a"))), "T")
+})
+
+test_that("chain = 'both' resolves Heavy/Light for BCR, not TRA/TRB", {
+  bcr <- combineBCR(BCR_SOURCE, samples = "P1", call.related.clones = FALSE)
+
+  # TRA/TRB names shift the V(D)J parse on BCR data: the heavy slot picks up
+  # the D gene as `j` and the light slot picks up the C gene as `j`.
+  heavy_wrong <- immApex::getIR(bcr, chains = "TRA", sequence.type = "nt")
+  heavy_right <- immApex::getIR(bcr, chains = "Heavy", sequence.type = "nt")
+  expect_true(any(grepl("^IGHD", na.omit(heavy_wrong$j))))
+  expect_true(all(grepl("^IGHJ", na.omit(heavy_right$j))))
+
+  light_wrong <- immApex::getIR(bcr, chains = "TRB", sequence.type = "nt")
+  light_right <- immApex::getIR(bcr, chains = "Light", sequence.type = "nt")
+  expect_true(any(grepl("C$", na.omit(light_wrong$j))))
+  expect_true(all(grepl("^IG[KL]J", na.omit(light_right$j))))
+
+  # The J filter must therefore act on real J genes end to end
+  res <- clonalCluster(bcr, chain = "both", sequence = "nt",
+                       threshold = 0.85, use.V = TRUE, use.J = TRUE)
+  expect_true("Multi.Cluster" %in% names(res[[1]]))
+  expect_false(all(is.na(res[[1]]$Multi.Cluster)))
+})
+
+test_that("group.by writes cluster IDs, not group labels, into the .Cluster column", {
+  res <- clonalCluster(combined[1:2], chain = "TRB", sequence = "aa",
+                       threshold = 0.85, group.by = "sample")
+
+  expect_true("TRB.Cluster" %in% names(res[[1]]))
+  # The stale positional rename leaked the grouping variable into this column
+  expect_false("cluster" %in% names(res[[1]]))
+  ids <- na.omit(unlist(lapply(res, `[[`, "TRB.Cluster")))
+  expect_true(all(grepl("^cluster\\.", ids)))
+  expect_false(any(ids %in% unique(combined[[1]]$sample)))
+
+  # Grouping is respected: a cluster never spans two groups
+  bound <- do.call(rbind, lapply(res, function(x) x[, c("sample", "TRB.Cluster")]))
+  bound <- bound[!is.na(bound$TRB.Cluster), ]
+  expect_equal(max(tapply(bound$sample, bound$TRB.Cluster,
+                          function(x) length(unique(x)))), 1L)
+})
+
+test_that("repeated engine notices are collapsed to one per distinct message", {
+  bcr <- combineBCR(BCR_SOURCE, samples = "P1", call.related.clones = FALSE)
+  bcr[[1]]$grp <- rep(c("a", "b"), length.out = nrow(bcr[[1]]))
+
+  msgs <- character(0)
+  withCallingHandlers(
+    clonalCluster(bcr, chain = "both", sequence = "nt", dist.type = "hamming",
+                  threshold = 0.9, group.by = "grp", use.V = TRUE, use.J = TRUE),
+    message = function(m) {
+      msgs <<- c(msgs, conditionMessage(m))
+      invokeRestart("muffleMessage")
+    },
+    warning = function(w) {
+      msgs <<- c(msgs, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    })
+
+  hamming <- grep("Hamming", msgs, value = TRUE)
+  # 2 chains x 2 groups = 4 raw notices, surfaced once
+  expect_lte(length(hamming), 1L)
+})
+
+test_that("sequence = 'nt' clusters on nucleotides, not amino acids", {
+  bcr <- combineBCR(BCR_SOURCE, samples = "P1", call.related.clones = FALSE)
+
+  # getIR names the CDR3 column cdr3_aa regardless of alphabet; confirm the
+  # nt request actually pulls CTnt
+  nt <- immApex::getIR(bcr, chains = "Heavy", sequence.type = "nt")
+  aa <- immApex::getIR(bcr, chains = "Heavy", sequence.type = "aa")
+  expect_true(all(grepl("^[ACGTN]+$", na.omit(nt$cdr3_aa))))
+  expect_false(all(grepl("^[ACGTN]+$", na.omit(aa$cdr3_aa))))
+
+  res_nt <- clonalCluster(bcr, chain = "IGH", sequence = "nt", threshold = 0.85)
+  res_aa <- clonalCluster(bcr, chain = "IGH", sequence = "aa", threshold = 0.85)
+  expect_false(identical(res_nt[[1]]$IGH.Cluster, res_aa[[1]]$IGH.Cluster))
 })

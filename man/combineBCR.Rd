@@ -49,10 +49,14 @@ as the input list.}
 Passed to \code{clonalCluster()}. Default is \code{"IGH"}.}
 
 \item{sequence}{The sequence type (\code{"nt"} or \code{"aa"}) to use for clustering.
-Passed to \code{clonalCluster()}. Default is \code{"nt"}.}
+Passed to \code{clonalCluster()}, which reads \code{CTnt} or \code{CTaa} accordingly.
+Default is \code{"nt"}.}
 
 \item{dist.type}{The distance metric to use. Options: \code{"levenshtein"} (default),
-\code{"hamming"}, \code{"damerau"}, \code{"nw"} (Needleman-Wunsch), or \code{"sw"} (Smith-Waterman).}
+\code{"hamming"}, \code{"damerau"}, \code{"nw"} (Needleman-Wunsch), or \code{"sw"} (Smith-Waterman).
+\code{"hamming"} only compares sequences of equal length; unequal-length pairs are
+given the maximum distance and never cluster, which emits a notice. See
+\code{\link[=clonalCluster]{clonalCluster()}} for details.}
 
 \item{dist.mat}{The substitution matrix to use for alignment-based metrics
 (\code{"nw"} or \code{"sw"}). Options include \code{"BLOSUM62"}, \code{"PAM30"}, etc.}

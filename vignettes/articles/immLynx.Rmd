@@ -49,6 +49,10 @@ knitr::opts_chunk$set(
 - TCR clustering ([clusTCR](https://github.com/svalkiers/clusTCR))
 - Protein language model embeddings ([ESM-2](https://github.com/facebookresearch/esm))
 - Metaclone discovery ([metaclonotypist](https://github.com/emerson-hammer/metaclonotypist))
+- Near-neighbor search by symmetric deletion lookup ([pyrepseq](https://github.com/andim/pyrepseq))
+- Deep generative featurization ([DeepTCR](https://github.com/sidhomj/DeepTCR))
+- Clonal expansion prediction from gene expression ([scXpand](https://github.com/scXpand/scXpand))
+- Export to the Python single-cell ecosystem ([scanpy](https://github.com/scverse/scanpy) and [scirpy](https://github.com/scverse/scirpy))
 
 immLynx is fully compatible with the [scRepertoire](https://github.com/BorchLab/scRepertoire) and [immApex](https://github.com/BorchLab/immApex) ecosystem for single-cell immune repertoire analysis.
 
@@ -63,6 +67,8 @@ devtools::install_github("BorchLab/immLynx")
 ### Python Dependencies
 
 immLynx uses [basilisk](https://bioconductor.org/packages/basilisk/) to manage Python dependencies automatically. The first time you use functions that call Python, basilisk will create an isolated conda environment with all required packages. This may take a few minutes on first run.
+
+A few tools pin dependency versions that cannot coexist with that main environment, so they get their own. `exportToScanpy()` uses a scanpy/scirpy environment, `runDeepTCR()` uses a TensorFlow environment, and `runScXpand()` uses a PyTorch environment. Each is built on first use of the function that needs it, so you only pay for the ones you actually call.
 
 ## The Data Set
 
@@ -159,6 +165,49 @@ cat("MCL (inflation=2):", length(unique(na.omit(scRep_example$mcl_2_TRB))), "clu
 cat("MCL (inflation=3):", length(unique(na.omit(scRep_example$mcl_3_TRB))), "clusters\n")
 cat("DBSCAN:", length(unique(na.omit(scRep_example$dbscan_TRB))), "clusters\n")
 ```
+
+## Near-Neighbor Search with symdel
+
+Symmetric deletion lookup finds every pair of CDR3 sequences within a given edit distance without building a full pairwise distance matrix. It indexes each sequence by its set of single-character deletions, so two sequences within one edit share a deletion variant and collide in the index. Cost scales with the number of sequences rather than with their square.
+
+By default `runSymdelNeighbors()` adds a `symdel_degree` column giving the number of neighbors each cell's CDR3 has. High degree marks sequences sitting in dense similarity neighborhoods, the signature of convergent recombination and antigen-driven expansion:
+
+```{r}
+scRep_example <- runSymdelNeighbors(
+  scRep_example,
+  chains = "TRB",
+  max_edits = 1
+)
+
+table(scRep_example$symdel_degree, useNA = "ifany")
+```
+
+Setting `return_object = FALSE` returns the neighbor pairs themselves, which is the more useful form when building a similarity graph:
+
+```{r}
+edges <- runSymdelNeighbors(
+  scRep_example,
+  chains = "TRB",
+  max_edits = 2,
+  return_object = FALSE
+)
+
+head(edges)
+```
+
+The edge list feeds directly into a graph representation of the repertoire:
+
+```{r}
+library(igraph)
+
+g <- graph_from_data_frame(edges[, c("from_seq", "to_seq")], directed = FALSE)
+components <- components(g)
+
+cat("Connected components:", components$no, "\n")
+cat("Largest component:", max(components$csize), "sequences\n")
+```
+
+This is the same algorithm benchmarked in the [XT-neighbor](https://github.com/heartnetkung/XT-neighbor) work. immLynx uses the CPU implementation from pyrepseq, so no GPU is required.
 
 ## TCR Distance Calculations with tcrdist3
 
@@ -324,6 +373,99 @@ embeddings <- proteinEmbeddings(
 dim(embeddings)
 ```
 
+## Deep Generative Featurization with DeepTCR
+
+DeepTCR learns a latent representation of CDR3 sequences with a variational autoencoder. Where ESM-2 brings general protein knowledge learned from UniProt, the DeepTCR VAE trains on the repertoire in front of it, so its features describe the structure of that specific dataset. The two are complementary rather than interchangeable.
+
+DeepTCR prunes uninformative latent dimensions during training, so the result may be narrower than `latent_dim` requests:
+
+```{r}
+scRep_example <- runDeepTCR(
+  scRep_example,
+  chains = "TRB",
+  latent_dim = 64,
+  verbose = FALSE
+)
+
+dim(Embeddings(scRep_example, "tcr_deeptcr"))
+```
+
+Passing `use_genes = TRUE` includes V and J gene usage alongside the CDR3 sequence, which helps when gene usage carries specificity signal the CDR3 alone does not:
+
+```{r}
+scRep_example <- runDeepTCR(
+  scRep_example,
+  chains = "TRB",
+  use_genes = TRUE,
+  reduction_name = "tcr_deeptcr_genes"
+)
+```
+
+### Comparing DeepTCR and ESM-2 Representations
+
+Because both write to a dimensional reduction, they live in the same object and can be projected side by side:
+
+```{r}
+scRep_example <- runEmbeddings(scRep_example, chains = "TRB",
+                               reduction_name = "tcr_esm")
+scRep_example <- runDeepTCR(scRep_example, chains = "TRB",
+                            latent_dim = 64, verbose = FALSE)
+
+scRep_example <- RunUMAP(scRep_example, reduction = "tcr_esm",
+                         dims = 1:64, reduction.name = "umap_esm")
+scRep_example <- RunUMAP(scRep_example, reduction = "tcr_deeptcr",
+                         dims = 1:64, reduction.name = "umap_deeptcr")
+
+DimPlot(scRep_example, reduction = "umap_esm", group.by = "clustcr_TRB") +
+  ggtitle("ESM-2") + NoLegend()
+DimPlot(scRep_example, reduction = "umap_deeptcr", group.by = "clustcr_TRB") +
+  ggtitle("DeepTCR VAE") + NoLegend()
+```
+
+The VAE needs enough unique sequences to learn anything meaningful. On a few hundred sequences the latent space is dominated by noise, and the reconstruction accuracy printed during training is the quickest way to see it.
+
+## Clonal Expansion Prediction with scXpand
+
+scXpand predicts T-cell clonal expansion from gene expression alone using pretrained pan-cancer models. Unlike the other wrapped tools it needs no receptor sequences, so it works on datasets with no paired TCR sequencing.
+
+List the available models without building the Python environment:
+
+```{r}
+listScXpandModels()
+```
+
+Run inference with the default pan-cancer autoencoder. This writes a predicted probability and a thresholded call back to cell metadata:
+
+```{r}
+scRep_example <- runScXpand(
+  scRep_example,
+  model_name = "pan_cancer_autoencoder"
+)
+
+hist(scRep_example$scXpand_expansion_prob,
+     breaks = 50,
+     main = "Predicted Expansion Probability",
+     xlab = "scXpand_expansion_prob")
+
+table(scRep_example$scXpand_expansion_pred, useNA = "ifany")
+```
+
+When scRepertoire clone calls are present, `runScXpand()` also derives observed clone sizes and an expansion label using scXpand's 1.5x-median rule. That lets a gene-expression-only prediction be scored against the observed repertoire:
+
+```{r}
+df <- data.frame(
+  prob  = scRep_example$scXpand_expansion_prob,
+  truth = scRep_example$scXpand_expansion_truth
+)
+df <- df[!is.na(df$truth), ]
+
+boxplot(prob ~ truth, data = df,
+        main = "Predicted probability vs observed expansion",
+        xlab = "Observed expansion", ylab = "scXpand_expansion_prob")
+```
+
+Note the model is indexed by Ensembl IDs. If your object uses gene symbols, `runScXpand()` maps them through `org.Hs.eg.db` and reports ambiguous symbols and collapsed duplicates rather than resolving them silently, because scXpand zero-fills genes it cannot find.
+
 ## Metaclone Discovery with Metaclonotypist
 
 Identify TCR metaclones - groups of related T cell receptors that may recognize similar antigens:
@@ -445,6 +587,49 @@ cat("Number of clustcr clusters:", nrow(comparison), "\n")
 cat("Number of unique clonotypes:", ncol(comparison), "\n")
 ```
 
+# Handing Off to Python: scanpy and scirpy
+
+`exportToScanpy()` writes the object out for the Python single-cell ecosystem. It accepts a `SingleCellExperiment` or a `Seurat` object and handles the conversion internally.
+
+Writing gene expression alone produces an H5AD file plus an AIRR rearrangement TSV sidecar:
+
+```{r}
+res <- exportToScanpy(
+  scRep_example,
+  output_dir = "scanpy_export",
+  format     = "h5ad",
+  write_airr = TRUE
+)
+
+res$h5ad
+res$airr
+```
+
+Writing `h5mu` instead assembles gene expression and receptor data into a single MuData file that scirpy can read directly, with chains already indexed:
+
+```{r}
+res <- exportToScanpy(
+  scRep_example,
+  output_dir  = "scanpy_export",
+  format      = "h5mu",
+  chains      = "both",
+  reductions  = c("tcr_esm", "tcr_deeptcr"),
+  obs_columns = c("clustcr_TRB", "symdel_degree")
+)
+```
+
+On the Python side that file loads with no further preparation:
+
+```{python, eval = FALSE}
+import muon as mu
+import scirpy as ir
+
+mdata = mu.read_h5mu("scanpy_export/scRep_example.h5mu")
+ir.tl.chain_qc(mdata)
+```
+
+BCR loci (`IGH`, `IGK`, `IGL`) are mapped to the heavy and light chains that `immApex::getIR()` expects and disambiguated by V-gene prefix, so B-cell data exports the same way.
+
 # Exporting Results
 
 Export TCR data for use with external tools:
@@ -465,6 +650,11 @@ write.csv(clusters, "cluster_assignments.csv", row.names = FALSE)
 # Export embeddings
 embeddings <- Embeddings(scRep_example, "tcr_esm")
 write.csv(embeddings, "tcr_embeddings.csv")
+
+# Export the neighbor edge list
+edges <- runSymdelNeighbors(scRep_example, chains = "TRB",
+                            return_object = FALSE)
+write.csv(edges, "symdel_edges.csv", row.names = FALSE)
 ```
 
 # Working with Large Datasets
@@ -484,4 +674,17 @@ scRep_example <- runEmbeddings(
 sample_cells <- sample(colnames(scRep_example), 5000)
 subset_obj <- subset(scRep_example, cells = sample_cells)
 dist_results <- runTCRdist(subset_obj)
+
+# 3. Use near-neighbor search instead of a distance matrix
+# runSymdelNeighbors() avoids the quadratic step entirely and returns a
+# sparse edge list, so no subsampling is needed
+edges <- runSymdelNeighbors(
+  scRep_example,
+  chains = "TRB",
+  max_edits = 1,
+  n_cpu = 4,
+  return_object = FALSE
+)
 ```
+
+When the question is "which sequences are similar" rather than "how far apart is every pair", the near-neighbor search is the practical option past a few tens of thousands of unique sequences. For reference, 200,000 sequences at one edit takes roughly 3 seconds on a single core.

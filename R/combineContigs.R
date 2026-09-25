@@ -219,9 +219,13 @@ combineTCR <- function(input.data,
 #' @param chain The chain to use for clustering when `call.related.clones = TRUE`.
 #' Passed to `clonalCluster()`. Default is `"IGH"`.
 #' @param sequence The sequence type (`"nt"` or `"aa"`) to use for clustering.
-#' Passed to `clonalCluster()`. Default is `"nt"`.
+#' Passed to `clonalCluster()`, which reads `CTnt` or `CTaa` accordingly.
+#' Default is `"nt"`.
 #' @param dist.type The distance metric to use. Options: `"levenshtein"` (default),
 #' `"hamming"`, `"damerau"`, `"nw"` (Needleman-Wunsch), or `"sw"` (Smith-Waterman).
+#' `"hamming"` only compares sequences of equal length; unequal-length pairs are
+#' given the maximum distance and never cluster, which emits a notice. See
+#' [clonalCluster()] for details.
 #' @param dist.mat The substitution matrix to use for alignment-based metrics
 #' (`"nw"` or `"sw"`). Options include `"BLOSUM62"`, `"PAM30"`, etc.
 #' @param normalize Method for normalizing distances. Options: `"none"` (default),
@@ -405,8 +409,17 @@ combineBCR <- function(input.data,
   final_list <- purrr::map2(processed_list, seq_along(processed_list), function(df, i) {
     # Assigning CTstrict
     if (call.related.clones) {
-      # Get the cluster column from clonalCluster output
-      cluster_col <- clusters[[i]][, ncol(clusters[[i]])]
+      # Get the cluster column from clonalCluster output by name. clonalCluster
+      # returns the input untouched when no edges pass the threshold, so the
+      # column can legitimately be absent; positional indexing would silently
+      # pick up whatever column happened to be last.
+      cluster.col <- ifelse(chain == "both", "Multi.Cluster",
+                            paste0(chain, ".Cluster"))
+      cluster_col <- if (cluster.col %in% colnames(clusters[[i]])) {
+        clusters[[i]][[cluster.col]]
+      } else {
+        rep(NA_character_, nrow(df))
+      }
       
       # ========== CTstrict FORMATTING LOGIC ==========
       seq_col <- ifelse(sequence == "aa", "cdr3_aa", "cdr3_nt")

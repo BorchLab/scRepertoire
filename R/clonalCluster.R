@@ -21,6 +21,14 @@
 #'       distance. A lower value means greater similarity is required.
 #' 5.  **Distance Metrics:**
 #'     - **Levenshtein/Hamming/Damerau:** Standard edit distance calculations.
+#'       `"hamming"` is only defined for equal-length sequences; pairs of
+#'       unequal length are assigned the maximum distance and so never cluster.
+#'       CDR3 lengths vary, so the engine's equal-length notice is expected
+#'       and most pairs are excluded by length alone. This mirrors the common
+#'       BCR convention of partitioning by V gene, J gene, and junction length
+#'       before scoring (use `use.V = TRUE`, `use.J = TRUE`). Use
+#'       `"levenshtein"` if you want sequences of differing length to be
+#'       comparable.
 #'     - **Alignment (NW/SW):** If `dist.type` is "nw" (Needleman-Wunsch) or
 #'       "sw" (Smith-Waterman), alignment scores are calculated using the
 #'       specified substitution matrix (`dist.mat`). These scores are converted
@@ -57,7 +65,9 @@
 #' @param chain The TCR/BCR chain to use. Use `both` to include both chains
 #' (e.g., TRA/TRB). Accepted values: `TRA`, `TRB`, `TRG`, `TRD`, `IGH`, `IGL`,
 #' `IGK`, `Light` (for both light chains), or `both` (for TRA/B and Heavy/Light).
-#' @param sequence Clustering based on either `aa` or `nt` sequences.
+#' @param sequence Clustering based on either `aa` or `nt` sequences. This
+#' selects `CTaa` or `CTnt` as the source of the CDR3 used for all distance
+#' calculations.
 #' @param threshold The similarity threshold. If < 1, treated as normalized
 #' similarity (higher is stricter). If >= 1, treated as raw edit distance
 #' (lower is stricter).
@@ -162,8 +172,16 @@ clonalCluster <- function(input.data,
     input.data <- .checkList(input.data)
   }
   if (chain == "both") {
-    # Use a placeholder to grab both alpha/beta or heavy/light chains
-    chains_to_get <- c("TRA", "TRB")
+    # "both" means the two chains of whichever receptor is present: TRA/TRB for
+    # T cells, Heavy/Light for B cells. getIR() parses the V(D)J(C) block by
+    # chain name, so handing it TCR names for BCR data shifts the gene columns:
+    # the heavy slot reads the D gene as `j` and the light slot reads the C gene
+    # as `j`, which silently corrupts `use.J` filtering.
+    chains_to_get <- if (.detectReceptor(input.data) == "B") {
+      c("Heavy", "Light")
+    } else {
+      c("TRA", "TRB")
+    }
     chain_data <- lapply(chains_to_get, function(x) {
       getIR(input.data, chains = x, sequence.type = sequence, group.by = group.by)
     })
@@ -183,13 +201,29 @@ clonalCluster <- function(input.data,
   # multiplicity, so they use "clique".
   expand <- if (identical(cluster.method, "components")) "star" else "clique"
 
-  # Apply the network function to each data frame and combine into one edge list
-  result_list <- lapply(chain_data, function(y) {
-    y <- y[!is.na(y[,1]),]
-    .buildNetwork(y, use.V, use.J, threshold,
-                  dist.type, dist.mat, normalize,
-                  gap.open, gap.extend, expand)
-  })
+  # Apply the network function to each data frame and combine into one edge list.
+  # The engine signals per call (e.g. the Hamming equal-length notice, a
+  # message() in current immApex and a warning() in older ones), which becomes
+  # one copy per chain per group.by level. Collect both kinds, then re-emit each
+  # distinct text once so a real problem is not buried in repeats.
+  held <- list(warning = character(0), message = character(0))
+  result_list <- withCallingHandlers(
+    lapply(chain_data, function(y) {
+      y <- y[!is.na(y[,1]),]
+      .buildNetwork(y, use.V, use.J, threshold,
+                    dist.type, dist.mat, normalize,
+                    gap.open, gap.extend, expand)
+    }),
+    warning = function(w) {
+      held$warning <<- c(held$warning, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    },
+    message = function(m) {
+      held$message <<- c(held$message, conditionMessage(m))
+      invokeRestart("muffleMessage")
+    })
+  for (txt in unique(held$warning)) warning(txt, call. = FALSE)
+  for (txt in unique(held$message)) message(sub("\n$", "", txt))
   full_edge_list <- do.call(rbind, result_list)
   
   # if group.by is invoked
@@ -296,7 +330,13 @@ clonalCluster <- function(input.data,
   
   # Attaching to input.data
   bound <- igraph::as_data_frame(full_g, what = "vertices")
-  colnames(bound)[2] <- ifelse(chain == "both", "Multi.Cluster", paste0(chain, ".Cluster"))
+  # Vertex attributes come back as name, [group], cluster. When group.by is set
+  # the second column is the grouping variable, so select the cluster column by
+  # name instead of by position and drop the helper group column; indexing
+  # position 2 previously wrote the group labels into the .Cluster column.
+  cluster.col <- ifelse(chain == "both", "Multi.Cluster", paste0(chain, ".Cluster"))
+  bound <- bound[, c("name", "cluster"), drop = FALSE]
+  colnames(bound) <- c("name", cluster.col)
   
   #Adding to potential single-cell object
   if(.is.seurat.or.se.object(input.data)) {
@@ -368,6 +408,10 @@ clonalCluster <- function(input.data,
   # passed through unchanged.
   bn_threshold <- if (threshold < 1) 1 - threshold else threshold
 
+  # `cdr3_aa` is getIR()'s fixed output name for the CDR3 column, not a claim
+  # about the alphabet: it carries nucleotides when the caller asked for
+  # `sequence = "nt"` (getIR pulls CTnt instead of CTaa). There is no cdr3_nt
+  # column to point at here.
   edge_list <- buildNetwork(df,
                             seq_col   = "cdr3_aa",
                             v_col     = "v",

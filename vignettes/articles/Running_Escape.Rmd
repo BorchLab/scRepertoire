@@ -74,7 +74,11 @@ The core workflow is:
 3. (Optional) Normalize for drop-out (```performNormalization()```)
 4. Explore with the built-in visualization gallery
 
+Counts can arrive as a plain matrix, a Seurat object, a `SingleCellExperiment`, or a `SpatialExperiment` - spots are treated as cells throughout. Scoring runs on escape's own engines by default, with an optional [plaid](https://bigomics.github.io/plaid/) backend for large objects.
+
 More information is available at the [GitHub Repo](https://github.com/BorchLab/escape).
+
+*Note:* the backend, `input.assay`, and spatial features described below require **escape 2.9.1** or later. Code chunks demonstrating them are shown but not executed in this article.
 
 ## Citation 
 
@@ -89,6 +93,13 @@ if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 
 BiocManager::install("escape")
+```
+
+Two optional packages unlock features used below. Neither is required for the default workflow:
+
+```{r eval=FALSE}
+BiocManager::install("SpatialExperiment")  # spatial objects
+BiocManager::install("plaid")              # the fast scoring backend
 ```
 
 # Loading Data
@@ -171,7 +182,7 @@ In contrast to ssGSEA and GSVA, AUCell takes the gene rankings for each cell and
 
 Please see the following [citation](https://pubmed.ncbi.nlm.nih.gov/28991892/) for more information.
 
-### UCell
+### **UCell**
 
 UCell calculates a Mann-Whitney U statistic based on the gene rank list. **Importantly**, UCell has a cut-off for ranked genes ($$r_{max}$$) at 1500 - this is per design as drop-out in single-cell can alter enrichment results. This also substantially speeds the calculations up.
 
@@ -183,22 +194,96 @@ $$
 
 Please see the following [citation](https://pubmed.ncbi.nlm.nih.gov/34285779/) for more information.
 
+## Choosing a backend
+
+Each method above runs on escape's own engine by default. Setting **backend** = "plaid" reroutes the calculation through [plaid](https://bigomics.github.io/plaid/), which reimplements these scores as a single sparse matrix operation and uses substantially less memory. On a 166,000-spot Xenium object with three gene sets, UCell scoring took 28.6 s natively and 6.8 s through plaid, a 4.2x speedup. plaid also provides three scores escape has no native implementation for, which select the plaid backend on their own.
+
+| Method | Backends | Measured agreement with the native score | Input assay |
+|---|---|---|---|
+| `ssGSEA` | native, plaid | pooled Pearson ~0.85 | counts (native) / logcounts (plaid) |
+| `GSVA` | native, plaid | pooled Pearson ~0.73 | counts (native) / logcounts (plaid) |
+| `AUCell` | native, plaid | pooled Pearson ~0.83 | counts (native) / logcounts (plaid) |
+| `UCell` | native, plaid | pooled Pearson ~0.83 | counts (native) / logcounts (plaid) |
+| `PLAID` | plaid only | n/a - a distinct score | logcounts |
+| `singscore` | plaid only | n/a - no native implementation | logcounts |
+| `scSE` | plaid only | n/a - no native implementation | logcounts |
+
+Those correlations come from a simulated 2000-gene, 120-cell matrix with two planted gene sets. On narrower matrices they drop further.
+
+
+```{r eval=FALSE}
+# native (default)
+scRep_example <- runEscape(scRep_example,
+                           gene.sets = escape.gene.sets,
+                           method    = "UCell",
+                           min.size  = 3)
+
+# same method, plaid engine, log-normalized input picked automatically
+scRep_example <- runEscape(scRep_example,
+                           gene.sets      = escape.gene.sets,
+                           method         = "UCell",
+                           min.size       = 3,
+                           backend        = "plaid",
+                           new.assay.name = "escape.UCell.plaid")
+
+# method-specific tuning goes through backend.args, never through ...
+scores <- escape.matrix(scRep_example,
+                        gene.sets    = escape.gene.sets,
+                        method       = "ssGSEA",
+                        backend      = "plaid",
+                        backend.args = list(alpha = 0.25))
+```
+
+Two arguments are easy to confuse. **normalize** is escape's post-hoc drop-out scaling (see ```performNormalization()``` below). `backend.args$normalize` is plaid's median normalization of the raw scores, applied inside the calculation. They are independent, and turning both on stacks them.
+
+Anyone using a plaid backend should cite Zito *et al.*, *Bioinformatics* 2025, 41(12):btaf621 in addition to the original method paper and escape.
+
+## Choosing the input assay
+
+**input.assay** controls which expression matrix is scored. The default "auto" reads raw counts for the native backend and log-normalized values for plaid, which is what each expects. "counts" and "logcounts" resolve to the right place for both object types - the `counts` and `data` layers in Seurat, the `counts` and `logcounts` assays in a SummarizedExperiment - so the same call works across classes. Any other string is taken literally as a layer or assay name.
+
+```{r eval=FALSE}
+scores <- escape.matrix(scRep_example,
+                        gene.sets   = escape.gene.sets,
+                        method      = "ssGSEA",
+                        input.assay = "logcounts")
+```
+
+Note that the four native methods are rank or CDF based, so a monotone transform of the input generally leaves their scores unchanged. **input.assay** matters most for the plaid paths, which average in log space.
+
+## Spatial data
+
+`SpatialExperiment` objects work anywhere a `SingleCellExperiment` does, spots being treated as cells. Nothing special is required - pass the object straight to ```runEscape()```:
+
+```{r eval=FALSE}
+library(SpatialExperiment)
+
+spe <- runEscape(spe,
+                 gene.sets      = escape.gene.sets,
+                 method         = "UCell",
+                 min.size       = 3,
+                 new.assay.name = "escape")
+```
+
+```runEscape()``` attaches the scores as an altExp and leaves the rest of the object alone - `spatialCoords()`, `imgData()`, and `sample_id` all survive unchanged. The scores themselves carry no spatial information, so to plot enrichment against position you pull both from the object. Objects carrying several `sample_id` values need no special treatment. The [escape vignette](https://www.bioconductor.org/packages/release/bioc/vignettes/escape/inst/doc/escape.html) has a worked spatial example.
+
 ## escape.matrix
 
 escape has 2 major functions - the first being ```escape.matrix()```, which serves as the backbone of enrichment calculations. Using count-level data supplied from a single-cell object or matrix, ```escape.matrix()``` will produce an enrichment score for the individual cells with the gene sets selected and output the values as a matrix.
 
-**method** 
+**method**
 
-* AUCell 
-* GSVA 
+* AUCell
+* GSVA
 * ssGSEA
 * UCell
+* PLAID, singscore, scSE (these require the plaid backend and select it on their own)
 
-**groups**  
+**groups**
 
-* The number of cells to calculate at once. 
+* The number of cells to calculate at once.
 
-**min.size** 
+**min.size**
 
 * The minimum size of detectable genes in a gene set. Gene sets less than the **min.size** will be removed before the calculation.
 
@@ -208,9 +293,21 @@ escape has 2 major functions - the first being ```escape.matrix()```, which serv
 
 **make.positive**
 
-* During normalization, whether to shift the enrichment values to a positive range (**TRUE**) or not (**FALSE**). The default value is **FALSE**. 
+* During normalization, whether to shift the enrichment values to a positive range (**TRUE**) or not (**FALSE**). The default value is **FALSE**.
 
 *Cautionary note:* **make.positive** was added to allow for differential analysis downstream of enrichment as some methods may produce negative values. It preserves log-fold change, but ultimately modifies the enrichment values and should be used with caution.
+
+**backend**
+
+* Which engine computes the scores, "native" (the default) or "plaid". See [Choosing a backend] above.
+
+**backend.args**
+
+* A named list of method-specific tuning passed to the underlying plaid function, e.g. `list(alpha = 0.25)`. Names are checked against the target function, so a typo errors rather than being ignored. Ordinary `...` arguments go to the native engines and are refused on the plaid path.
+
+**input.assay**
+
+* Which expression matrix to score. "auto" (the default) reads counts for the native backend and logcounts for plaid. See [Choosing the input assay] above.
 
 
 ```{r}
@@ -290,6 +387,14 @@ scRep_example <- performNormalization(input.data = scRep_example,
 ```
 
 ```performNormalization()``` has an additional parameter **make.positive**. Across the individual gene sets, if negative normalized enrichment scores are seen, the minimum value is added to all values. For example if the normalized enrichment scores (after the above accounting for drop out) ranges from -50 to 50, **make.positive** will adjust the range to 0 to 100 (by adding 50). This allows for compatible log2-fold change downstream, but can alter the enrichment score interpretation.
+
+As of escape 2.9.1, three details are worth knowing:
+
+* **It always reads raw counts.** The scale factor is the number of genes in each set with a non-zero count, so ```performNormalization()``` ignores whatever **input.assay** was used to compute the scores. Detection is identical in count and log space, so this is deliberate.
+* **Supplied scores win.** If you pass **enrichment.data** explicitly it is used even when the named **assay** also exists on the object, and you get a warning that both were available.
+* **Setting `assay = NULL` returns a matrix** rather than attaching a new assay to the object.
+
+Gene-set names are matched to the enrichment columns literally first, then against the hyphenated form Seurat produces when it builds an assay. That means underscored library names such as `HALLMARK_HYPOXIA` normalize correctly whether the scores live in a Seurat assay, an altExp, or a bare matrix. Earlier versions mangled every name unconditionally, which silently dropped those sets for `SingleCellExperiment`, `SpatialExperiment`, and matrix input.
 
 ****
 

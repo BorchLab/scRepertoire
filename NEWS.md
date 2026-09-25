@@ -1,3 +1,18 @@
+# scRepertoire VERSION 2.9.4
+
+## BUG FIXES
+
+* `clonalCluster(chain = "both")` now resolves the two chains from the data (`Heavy`/`Light` for BCR, `TRA`/`TRB` for TCR) instead of always asking for `TRA`/`TRB`. The chain name drives how the V(D)J block is parsed, so BCR data was read with the wrong layout: the heavy slot took the D gene as its J call and the light slot took the C gene. With `use.J = TRUE` (the `combineBCR()` default) the J filter was therefore matching on the wrong gene. Affects `combineBCR(chain = "both")` as well.
+* `clonalCluster(group.by = ...)` writes cluster IDs into the `.Cluster` column. The column was renamed by position, and the grouping variable occupies that position once `group.by` is set, so the output held group labels and the real IDs were left in a trailing `cluster` column.
+* `combineBCR()` reads the cluster column from `clonalCluster()` by name. It previously took the last column, which picked up an unrelated column in the case where no sequence pair passes the threshold and `clonalCluster()` returns the input untouched.
+* Deprecated argument warnings now actually reach the caller. `lifecycle` decides whether to signal from `user_env`, whose default sits two frames above the signaller; because the deprecation is raised from an internal helper rather than from the exported function itself, that default landed inside the package namespace and every deprecation was classified as indirect. `deprecate_soft()` is silent for indirect callers, so renamed arguments such as `clonalBin(cloneCall =)` or `combineBCR(removeNA =)` were accepted with no notice at all. The existing tests passed because `TESTTHAT_PKG` also counts as direct, which masked this everywhere except real use.
+
+## UNDERLYING CHANGES
+
+* `clonalCluster()` collapses repeated notices from the distance engine to one per distinct message. `dist.type = "hamming"` emits an equal-length notice on every call, which meant one copy per chain per `group.by` level.
+* Documented that `dist.type = "hamming"` only compares sequences of equal length, that unequal-length pairs are assigned the maximum distance and never cluster, and that `sequence = "nt"` reads `CTnt`. The internal CDR3 column is named `cdr3_aa` regardless of alphabet, which read as though clustering were always on amino acids (resolves #587).
+* The test suite forces `lifecycle_verbosity = "warning"`, so a deprecation assertion no longer depends on which test file reached that argument first.
+
 # scRepertoire VERSION 2.9.3
 
 ## BUG FIXES

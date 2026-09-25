@@ -37,7 +37,9 @@ clonalCluster(
 (e.g., TRA/TRB). Accepted values: \code{TRA}, \code{TRB}, \code{TRG}, \code{TRD}, \code{IGH}, \code{IGL},
 \code{IGK}, \code{Light} (for both light chains), or \code{both} (for TRA/B and Heavy/Light).}
 
-\item{sequence}{Clustering based on either \code{aa} or \code{nt} sequences.}
+\item{sequence}{Clustering based on either \code{aa} or \code{nt} sequences. This
+selects \code{CTaa} or \code{CTnt} as the source of the CDR3 used for all distance
+calculations.}
 
 \item{threshold}{The similarity threshold. If < 1, treated as normalized
 similarity (higher is stricter). If >= 1, treated as raw edit distance
@@ -129,6 +131,14 @@ distance. A lower value means greater similarity is required.
 \item \strong{Distance Metrics:}
 \itemize{
 \item \strong{Levenshtein/Hamming/Damerau:} Standard edit distance calculations.
+\code{"hamming"} is only defined for equal-length sequences; pairs of
+unequal length are assigned the maximum distance and so never cluster.
+CDR3 lengths vary, so the engine's equal-length notice is expected
+and most pairs are excluded by length alone. This mirrors the common
+BCR convention of partitioning by V gene, J gene, and junction length
+before scoring (use \code{use.V = TRUE}, \code{use.J = TRUE}). Use
+\code{"levenshtein"} if you want sequences of differing length to be
+comparable.
 \item \strong{Alignment (NW/SW):} If \code{dist.type} is "nw" (Needleman-Wunsch) or
 "sw" (Smith-Waterman), alignment scores are calculated using the
 specified substitution matrix (\code{dist.mat}). These scores are converted
