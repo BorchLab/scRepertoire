@@ -57,13 +57,17 @@ combined.TCR <- combineTCR(contig_list,
 
 The package identifies TCR specificity groups by detecting statistically enriched CDR3$\beta$ motifs (local similarity) and structurally similar CDR3$\beta$ sequences (global similarity), then clusters them into convergence groups and scores each group for biological significance.
 
-**immGLIPH is an R implementation of existing algorithms. Users should cite the original publications:**
+More information is available at the [immGLIPH GitHub Repo](https://github.com/BorchLab/immGLIPH).
+
+## Citation 
+
+If using *immGLIPH*, please cite the [article](https://doi.org/10.3389/fimmu.2026.1916535): Belean, A., et al. Single-cell sequencing of non-infectious and viral uveitis defines distinct mechanisms in ocular inflammation. *Frontiers in Immunology.* 17, 1916535 (2026).
+
+immGLIPH is an R implementation of existing algorithms, so please also cite the original publications:
 
 - **GLIPH**: Glanville, J. et al. *Identifying specificity groups in the T cell receptor repertoire.* Nature 547, 94--98 (2017). [doi:10.1038/nature22976](https://doi.org/10.1038/nature22976)
 
 - **GLIPH2**: Huang, H. et al. *Analyzing the Mycobacterium tuberculosis immune response by T-cell receptor clustering with GLIPH2 and genome-wide antigen screening.* Nature Biotechnology 38, 1194--1202 (2020). [doi:10.1038/s41587-020-0505-4](https://doi.org/10.1038/s41587-020-0505-4)
-
-More information is available at the [immGLIPH GitHub Repo](https://github.com/BorchLab/immGLIPH).
 
 ## Installation
 

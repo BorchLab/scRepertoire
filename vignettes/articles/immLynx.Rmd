@@ -58,6 +58,12 @@ immLynx is fully compatible with the [scRepertoire](https://github.com/BorchLab/
 
 More information is available at the [immLynx GitHub Repo](https://github.com/BorchLab/immLynx).
 
+## Citation 
+
+If using *immLynx*, please cite the [article](https://doi.org/10.3389/fimmu.2026.1916535): Belean, A., et al. Single-cell sequencing of non-infectious and viral uveitis defines distinct mechanisms in ocular inflammation. *Frontiers in Immunology.* 17, 1916535 (2026).
+
+immLynx is an interface to existing Python tools, so please also cite the original publications for each tool you use.
+
 ## Installation
 
 ```{r, eval = FALSE}
