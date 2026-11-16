@@ -1,3 +1,15 @@
+# scRepertoire VERSION 2.9.5
+
+## BUG FIXES
+
+* `clonalSizeDistribution()` no longer aborts on a sample whose clones are nearly all the same size. The discrete GPD likelihood raised an error when the optimizer drove the scale out of range, which discarded that threshold entirely; once every threshold in `threshold` had failed, `which.min()` returned `integer(0)` and the next line reported `attempt to select less than one element in get1index`. The likelihood now returns an infinite penalty the optimizer can step away from, so these samples fit normally. Affected `combineTCR()` output on the bundled `contig_list` at four and five samples.
+* The fallback that re-initializes the GPD after a failed fit ran inside an error handler, so anything it raised escaped the surrounding `tryCatch()` rather than marking that threshold unfittable. A threshold with a single clone above it leaves `var()` undefined and tripped this, which is why `threshold = 1:5` failed across the full eight-sample example.
+* If no threshold in `threshold` can be fit, `clonalSizeDistribution()` now says so and names the sample instead of surfacing a subscript error.
+
+## UNDERLYING CHANGES
+
+* Internal function conversion for `clonalSizeDistribution()` - removed evmix from dependencies ahead of its CRAN deprecation. The generalized Pareto density, distribution, quantile and random generation functions, along with the threshold fit used to initialize the spliced gamma-GPD model, are now internal. The replacements reproduce the previous parameter estimates and distance matrices exactly.
+
 # scRepertoire VERSION 2.9.4
 
 ## BUG FIXES

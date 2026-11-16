@@ -76,6 +76,157 @@ test_that("Plotting output has the correct dendrogram components", {
 })
 
 #################################################################
+# Section 0: Testing Internal GPD Distribution Functions
+#################################################################
+# These pin the in-house GPD functions to closed form rather than to any
+# external package, so they stand on their own now that evmix is gone.
+
+test_that("Internal GPD functions reduce to the exponential when xi = 0", {
+  u <- 2.5
+  sigma <- 1.7
+  x <- seq(u + 0.01, u + 20, length.out = 50)
+  p <- c(0.001, 0.1, 0.5, 0.9, 0.999)
+
+  expect_equal(.dgpd_internal(x, u = u, sigmau = sigma, xi = 0),
+               dexp(x - u, rate = 1 / sigma))
+  expect_equal(.pgpd_internal(x, u = u, sigmau = sigma, xi = 0),
+               pexp(x - u, rate = 1 / sigma))
+  expect_equal(.qgpd_internal(p, u = u, sigmau = sigma, xi = 0),
+               u + qexp(p, rate = 1 / sigma))
+
+  # The limiting branch is taken for any |xi| < 1e-6
+  expect_equal(.pgpd_internal(x, u = u, sigmau = sigma, xi = 1e-9),
+               pexp(x - u, rate = 1 / sigma))
+})
+
+test_that("Internal GPD functions match the closed-form GPD when xi != 0", {
+  for (params in list(c(u = 0, sigmau = 1, xi = 0.3),
+                      c(u = 5, sigmau = 2.5, xi = 0.9),
+                      c(u = 100, sigmau = 0.4, xi = -0.25))) {
+    u <- params[["u"]]
+    sigma <- params[["sigmau"]]
+    xi <- params[["xi"]]
+    # Stay strictly inside the support, which is bounded above when xi < 0
+    top <- if (xi < 0) u - sigma / xi else u + 30
+    x <- seq(u + 1e-3, top - 1e-3, length.out = 50)
+
+    for (phiu in c(1, 0.35)) {
+      s <- 1 + xi * (x - u) / sigma
+      expect_equal(.dgpd_internal(x, u, sigma, xi, phiu = phiu),
+                   (phiu / sigma) * s^(-1 / xi - 1))
+      expect_equal(.pgpd_internal(x, u, sigma, xi, phiu = phiu),
+                   1 - phiu * s^(-1 / xi))
+
+      # The quantile function inverts the distribution function
+      p <- .pgpd_internal(x, u, sigma, xi, phiu = phiu)
+      expect_equal(.qgpd_internal(p, u, sigma, xi, phiu = phiu), x)
+    }
+  }
+})
+
+test_that("Internal GPD functions handle the support boundaries", {
+  u <- 3
+  sigma <- 2
+
+  # No mass at or below the threshold
+  expect_equal(.dgpd_internal(c(u - 1, u), u = u, sigmau = sigma, xi = 0.2),
+               c(0, 0))
+  expect_equal(.pgpd_internal(c(u - 1, u), u = u, sigmau = sigma, xi = 0.2),
+               c(0, 0))
+
+  # A negative shape bounds the support above at u - sigmau/xi
+  xi <- -0.5
+  upper <- u - sigma / xi
+  expect_equal(.dgpd_internal(upper + 1, u = u, sigmau = sigma, xi = xi), 0)
+  expect_equal(.pgpd_internal(upper + 1, u = u, sigmau = sigma, xi = xi), 1)
+
+  # Below the threshold a mixture (phiu < 1) leaves the bulk to the other
+  # component, so the value is undefined rather than zero
+  expect_true(is.na(.pgpd_internal(u - 1, u = u, sigmau = sigma, xi = 0.2,
+                                   phiu = 0.4)))
+  expect_true(is.na(.qgpd_internal(0.1, u = u, sigmau = sigma, xi = 0.2,
+                                   phiu = 0.4)))
+
+  # log = TRUE and lower.tail = FALSE agree with the untransformed values
+  x <- c(4, 7, 12)
+  expect_equal(.dgpd_internal(x, u, sigma, 0.2, log = TRUE),
+               log(.dgpd_internal(x, u, sigma, 0.2)))
+  expect_equal(.pgpd_internal(x, u, sigma, 0.2, lower.tail = FALSE),
+               1 - .pgpd_internal(x, u, sigma, 0.2))
+
+  # Arguments recycle to a common length
+  expect_length(.dgpd_internal(x, u = c(1, 2, 3), sigmau = sigma, xi = 0.2), 3)
+  expect_error(.dgpd_internal(x, u, sigmau = -1, xi = 0.2), "positive")
+  expect_error(.qgpd_internal(1.5, u, sigma, 0.2), "\\[0,1\\]")
+})
+
+test_that(".rgpd_internal draws from the right distribution", {
+  set.seed(42)
+  u <- 10
+  sigma <- 3
+  xi <- 0.25
+  r <- .rgpd_internal(2e4, u = u, sigmau = sigma, xi = xi)
+
+  expect_length(r, 2e4)
+  expect_true(all(r > u))
+  # Empirical quantiles should track the theoretical ones
+  probs <- c(0.1, 0.25, 0.5, 0.75, 0.9)
+  expect_equal(as.vector(quantile(r, probs)),
+               .qgpd_internal(probs, u = u, sigmau = sigma, xi = xi),
+               tolerance = 0.05)
+
+  # Draws from the bulk fraction are not part of the GPD tail
+  set.seed(42)
+  mixed <- .rgpd_internal(1000, u = u, sigmau = sigma, xi = xi, phiu = 0.5)
+  expect_true(mean(is.na(mixed)) > 0.4 && mean(is.na(mixed)) < 0.6)
+})
+
+test_that(".fgpd_internal recovers the generating parameters", {
+  set.seed(7)
+  u <- 0
+  sigma <- 2
+  xi <- 0.3
+  x <- .rgpd_internal(5e4, u = u, sigmau = sigma, xi = xi)
+
+  fit <- .fgpd_internal(x, u = u)
+
+  expect_type(fit$mle, "double")
+  expect_length(fit$mle, 2)
+  expect_null(names(fit$mle))
+  expect_equal(fit$mle[1], sigma, tolerance = 0.05)
+  expect_equal(fit$mle[2], xi, tolerance = 0.1)
+  expect_equal(fit$sigmau, fit$mle[1])
+  expect_equal(fit$xi, fit$mle[2])
+  expect_equal(fit$phiu, 1)
+  expect_true(fit$conv)
+
+  # The threshold is strict, so phiu is the observed exceedance fraction
+  fit_thresh <- .fgpd_internal(x, u = quantile(x, 0.8))
+  expect_equal(fit_thresh$phiu, 0.2, tolerance = 0.01)
+
+  expect_error(.fgpd_internal(c(1, 2, 3), u = 10), "above threshold")
+})
+
+test_that(".nlgpd_internal is the negative GPD excess log-likelihood", {
+  x <- c(6, 7, 8, 12, 20)
+  u <- 5
+  sigma <- 2
+  xi <- 0.4
+  yu <- (x - u) / sigma
+
+  expected <- -(-length(x) * log(sigma) - (1 / xi + 1) * sum(log(1 + xi * yu)))
+  expect_equal(.nlgpd_internal(c(sigma, xi), x, u = u), expected)
+
+  # Equivalent to summing the log density of the excesses
+  expect_equal(.nlgpd_internal(c(sigma, xi), x, u = u),
+               -sum(.dgpd_internal(x, u, sigma, xi, log = TRUE)))
+
+  # Invalid parameters give an infinite penalty, clamped when finitelik = TRUE
+  expect_equal(.nlgpd_internal(c(sigma, -5), x, u = u), Inf)
+  expect_equal(.nlgpd_internal(c(sigma, -5), x, u = u, finitelik = TRUE), 1e6)
+})
+
+#################################################################
 # Section 2: Testing Core Modeling Functions
 #################################################################
 
@@ -144,4 +295,69 @@ test_that(".JS_dist returns a single non-negative number", {
   expect_type(jsd, "double")
   expect_length(jsd, 1)
   expect_gte(jsd, 0) 
+})
+
+#################################################################
+# Section 4: Testing Threshold Grid Search Robustness
+#################################################################
+
+test_that("Samples with a thin tail no longer abort the fit", {
+  # P18L and P20L have almost no clones above the default threshold, which
+  # drove the optimizer into an invalid region and errored out of optim().
+  # Every threshold then failed, which.min() returned integer(0), and the
+  # subscript two lines later raised "attempt to select less than one element".
+  for (k in c(4, 5)) {
+    dist_matrix <- clonalSizeDistribution(combined[seq_len(k)],
+                                          export.table = TRUE)
+    expect_true(is.matrix(dist_matrix))
+    expect_equal(dim(dist_matrix), c(k, k))
+    expect_true(all(is.finite(dist_matrix)))
+    expect_true(all(dist_matrix >= 0))
+    expect_equal(dist_matrix, t(dist_matrix))
+    expect_true(all(diag(dist_matrix) == 0))
+  }
+})
+
+test_that("`threshold` accepts a vector and the grid search picks per sample", {
+  dist_matrix <- clonalSizeDistribution(combined, threshold = 1:5,
+                                        export.table = TRUE)
+  expect_true(is.matrix(dist_matrix))
+  expect_equal(dim(dist_matrix), c(8, 8))
+  expect_true(all(is.finite(dist_matrix)))
+
+  # Thresholds that cannot be fit are skipped rather than aborting the search
+  set.seed(5)
+  x <- rpois(500, 3) + 1
+  fit <- suppressWarnings(.fdiscgammagpd(x, useq = 1:6))
+  expect_length(fit$nllhuseq, 6)
+  expect_true(any(is.finite(fit$nllhuseq)))
+  expect_equal(fit$mle[["thresh"]],
+               (1:6)[which.min(fit$nllhuseq)])
+})
+
+test_that("NLL functions penalize invalid parameters instead of erroring", {
+  # optim() searches log(sigma) unconstrained, so exp() can underflow to zero
+  # or overflow to infinity; that must read as an infinite penalty
+  expect_equal(.discgpdnll(c(-800, 0.1), dat = c(6, 7, 8), thresh = 5,
+                           phiu = 0.1), Inf)
+  expect_equal(.discgpdnll(c(800, 0.1), dat = c(6, 7, 8), thresh = 5,
+                           phiu = 0.1), Inf)
+  expect_equal(.discgammanll(c(800, 800), dat = c(1, 2), thresh = 5,
+                             phiu = 0.1), Inf)
+
+  # A single excess leaves var() undefined, so the starting scale can be NA
+  expect_equal(.nlgpd_internal(c(NA_real_, 0.1), c(6, 7), u = 5), Inf)
+  expect_equal(.nlgpd_internal(c(NA_real_, 0.1), c(6, 7), u = 5,
+                               finitelik = TRUE), 1e6)
+})
+
+test_that("An unfittable model reports why rather than a subscript error", {
+  # No clone sits above the threshold, so neither component can be identified
+  x <- c(rep(0L, 50), 1L, 2L)
+  expect_error(suppressWarnings(.fdiscgammagpd(x, useq = 100)),
+               "could not be fit at any threshold")
+
+  # Zero-length input must not recycle up to a length-one NA, which would
+  # score an unfittable threshold as a perfect fit
+  expect_error(.gpd_recycle(numeric(0), 1, 1, 0, 1), "empty")
 })

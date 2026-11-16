@@ -115,7 +115,13 @@ clonalSizeDistribution <- function(input.data,
   
   # Fit models
   list <- lapply(seq_len(ncol(Con.df))[-1], function(x) {
-    suppressWarnings(.fdiscgammagpd(Con.df[,x], useq = threshold))
+    withCallingHandlers(
+      suppressWarnings(.fdiscgammagpd(Con.df[,x], useq = threshold)),
+      error = function(e) {
+        stop("clonalSizeDistribution() could not fit the clonal size model ",
+             "for \"", colnames(Con.df)[x], "\": ", conditionMessage(e),
+             call. = FALSE)
+      })
   })
   
   names(list) <- names(input.data)
@@ -157,10 +163,291 @@ clonalSizeDistribution <- function(input.data,
 }
 
 #################################################################
+# Section 0: Internal GPD Distribution Functions
+#################################################################
+# Density, distribution, quantile, random generation and maximum-likelihood
+# fitting for the Generalized Pareto Distribution (GPD). These replace
+# evmix::dgpd/pgpd/qgpd/rgpd/fgpd, dropped as a dependency ahead of evmix's
+# CRAN deprecation.
+#
+# The parameterization follows evmix: threshold u, scale sigmau > 0, shape xi,
+# and tail fraction phiu, where the GPD occupies the upper phiu of the
+# distribution. Writing the scaled excess y = (x - u)/sigmau and s = 1 + xi*y,
+#
+#   F(x) = 1 - phiu * s^(-1/xi)                        for x > u
+#   f(x) = (phiu/sigmau) * s^(-1/xi - 1)               for x > u, s > 0
+#   x_p  = u + (sigmau/xi) * (((1-p)/phiu)^(-xi) - 1)   for p > 1 - phiu
+#
+# with the xi -> 0 (exponential) limits exp(-y), (phiu/sigmau)*exp(-y) and
+# u - sigmau*log((1-p)/phiu). As in evmix the limiting branch is taken when
+# abs(xi) < 1e-6, and the parameters are recycled to a common length.
+
+# Recycle the GPD arguments to a common length
+.gpd_recycle <- function(q, u, sigmau, xi, phiu) {
+  if (length(q) == 0L) {
+    # Recycling an empty vector against scalar parameters would silently
+    # produce a length-one NA. Callers treat a failure here as "no data above
+    # this threshold", which is the right reading
+    stop("quantiles input is empty.")
+  }
+  if (!all(is.finite(sigmau)) || any(sigmau <= 0)) {
+    stop("sigmau must be finite and positive.")
+  }
+  if (any(!is.finite(phiu)) || any(phiu < 0) || any(phiu > 1)) {
+    stop("phiu must be in [0,1].")
+  }
+  n <- max(length(q), length(u), length(sigmau), length(xi), length(phiu))
+  list(n      = n,
+       q      = rep(q,      length.out = n),
+       u      = rep(u,      length.out = n),
+       sigmau = rep(sigmau, length.out = n),
+       xi     = rep(xi,     length.out = n),
+       phiu   = rep(phiu,   length.out = n))
+}
+
+# GPD Density
+.dgpd_internal <- function(x, u = 0, sigmau = 1, xi = 0, phiu = 1,
+                           log = FALSE) {
+  pars <- .gpd_recycle(x, u, sigmau, xi, phiu)
+  x <- pars$q
+  u <- pars$u
+  sigmau <- pars$sigmau
+  xi <- pars$xi
+  phiu <- pars$phiu
+  x[is.infinite(x)] <- NA
+
+  yu <- (x - u) / sigmau
+  syu <- 1 + xi * yu
+  # Strictly greater than the threshold, so the density at x == u is zero
+  inSupport <- (yu > 0) & (syu > 0)
+
+  d <- x
+  d[which(!inSupport)] <- -Inf
+
+  expBranch <- abs(xi) < 1e-6
+  idx <- which(expBranch & inSupport)
+  if (length(idx) > 0L) {
+    d[idx] <- -log(sigmau[idx]) - yu[idx]
+  }
+  idx <- which(!expBranch & inSupport)
+  if (length(idx) > 0L) {
+    d[idx] <- -log(sigmau[idx]) - (1 / xi[idx] + 1) * log(syu[idx])
+  }
+
+  d <- d + log(phiu)
+  if (!log) {
+    d <- exp(d)
+  }
+  d
+}
+
+# GPD Distribution Function
+.pgpd_internal <- function(q, u = 0, sigmau = 1, xi = 0, phiu = 1,
+                           lower.tail = TRUE) {
+  pars <- .gpd_recycle(q, u, sigmau, xi, phiu)
+  q <- pars$q
+  u <- pars$u
+  sigmau <- pars$sigmau
+  xi <- pars$xi
+  phiu <- pars$phiu
+  q[is.infinite(q)] <- NA
+
+  yu <- pmax(q - u, 0) / sigmau
+  syu <- pmax(1 + xi * yu, 0)
+  above <- yu > 0
+
+  p <- q
+  below <- which(!above)
+  # Below the threshold the GPD alone (phiu == 1) has no mass; in a mixture
+  # the bulk model supplies it, so the value is left undefined
+  p[below] <- ifelse(phiu[below] == 1, 0, NA)
+
+  expBranch <- abs(xi) < 1e-6
+  idx <- which(expBranch & above)
+  if (length(idx) > 0L) {
+    p[idx] <- 1 - exp(-yu[idx])
+  }
+  idx <- which(!expBranch & above)
+  if (length(idx) > 0L) {
+    p[idx] <- 1 - syu[idx]^(-1 / xi[idx])
+  }
+
+  p <- 1 - (1 - p) * phiu
+  if (!lower.tail) {
+    p <- 1 - p
+  }
+  p
+}
+
+# GPD Quantile Function
+.qgpd_internal <- function(p, u = 0, sigmau = 1, xi = 0, phiu = 1,
+                           lower.tail = TRUE) {
+  if (any(p < 0 | p > 1, na.rm = TRUE)) {
+    stop("p must be in [0,1].")
+  }
+  if (!lower.tail) {
+    p <- 1 - p
+  }
+  pars <- .gpd_recycle(p, u, sigmau, xi, phiu)
+  p <- pars$q
+  u <- pars$u
+  sigmau <- pars$sigmau
+  xi <- pars$xi
+  phiu <- pars$phiu
+
+  above <- p > (1 - phiu)
+  quant <- p
+  below <- which(!above)
+  quant[below] <- ifelse(phiu[below] == 1, u[below], NA)
+
+  expBranch <- abs(xi) < 1e-6
+  idx <- which(expBranch & above)
+  if (length(idx) > 0L) {
+    quant[idx] <- u[idx] - sigmau[idx] * log((1 - p[idx]) / phiu[idx])
+  }
+  idx <- which(!expBranch & above)
+  if (length(idx) > 0L) {
+    quant[idx] <- u[idx] + sigmau[idx] *
+      (((1 - p[idx]) / phiu[idx])^(-xi[idx]) - 1) / xi[idx]
+  }
+  quant
+}
+
+# GPD Random Generation
+#' @importFrom stats rexp
+.rgpd_internal <- function(n = 1, u = 0, sigmau = 1, xi = 0, phiu = 1) {
+  if (any(xi == 1)) {
+    stop("shape cannot be 1.")
+  }
+  n <- max(n, length(u), length(sigmau), length(xi), length(phiu))
+  pars <- .gpd_recycle(rep(NA_real_, n), u, sigmau, xi, phiu)
+  u <- pars$u
+  sigmau <- pars$sigmau
+  xi <- pars$xi
+  phiu <- pars$phiu
+
+  # Draws below the tail fraction belong to the bulk and are left as NA
+  inTail <- runif(n) < phiu
+  r <- rep(NA_real_, n)
+
+  expBranch <- abs(xi) < 1e-6
+  idx <- which(expBranch & inTail)
+  if (length(idx) > 0L) {
+    # evmix::rgpd passes the threshold where rexp() expects a count; the
+    # number of draws is what is wanted here
+    r[idx] <- u[idx] + sigmau[idx] * rexp(length(idx))
+  }
+  idx <- which(!expBranch & inTail)
+  if (length(idx) > 0L) {
+    r[idx] <- u[idx] + sigmau[idx] *
+      (runif(length(idx))^(-xi[idx]) - 1) / xi[idx]
+  }
+  r
+}
+
+# Negative Log-Likelihood of the GPD Excesses Above the Threshold
+#
+#   l(sigmau, xi) = -nu*log(sigmau) - (1/xi + 1)*sum(log(1 + xi*y))
+#                   + nu*log(phiu)
+#
+# with the xi -> 0 form -nu*log(sigmau) - sum(y) + nu*log(phiu). The
+# likelihood is -Inf outside the support or for invalid parameters, which
+# `finitelik` clamps to a large finite value for the gradient-based optimizers
+# that cannot step away from an infinity.
+.nlgpd_internal <- function(pvector, x, u = 0, phiu = 1, finitelik = FALSE) {
+  sigmau <- pvector[1]
+  xi <- pvector[2]
+
+  x[!is.finite(x)] <- NA
+  xu <- x[which(x > u)]
+  nu <- length(xu)
+
+  # A lone excess leaves var() undefined, so the starting scale can arrive as
+  # NA; report an infinite penalty rather than letting it reach the test below
+  if (!is.finite(sigmau) || !is.finite(xi) || nu == 0L) {
+    nllh <- Inf
+    if (finitelik) nllh <- 1e6
+    return(nllh)
+  }
+
+  yu <- (xu - u) / sigmau
+  syu <- 1 + xi * yu
+
+  if (min(syu) <= 0 || sigmau <= 0 || phiu <= 0 || phiu > 1) {
+    loglik <- -Inf
+  } else if (abs(xi) < 1e-6) {
+    loglik <- -nu * log(sigmau) - sum(yu) + nu * log(phiu)
+  } else {
+    loglik <- -nu * log(sigmau) - (1 / xi + 1) * sum(log(syu)) +
+      nu * log(phiu)
+  }
+
+  nllh <- -loglik
+  if (finitelik && is.infinite(nllh)) {
+    nllh <- sign(nllh) * 1e6
+  }
+  nllh
+}
+
+# Maximum-Likelihood Fit of the GPD Above a Threshold
+#' @importFrom stats var optim
+.fgpd_internal <- function(x, u = 0, phiu = NULL, pvector = NULL,
+                           method = "BFGS", control = list(maxit = 10000),
+                           finitelik = TRUE, ...) {
+  x <- x[!is.infinite(x)]
+  n <- length(x)
+  if (method == "L-BFGS-B" || method == "BFGS") {
+    finitelik <- TRUE
+  }
+
+  # Missing values count toward n, so they are treated as below threshold
+  xu <- x[which(x > u)]
+  nu <- length(xu)
+  if (nu < 1) {
+    stop("no elements of x are above threshold")
+  }
+
+  if (is.null(pvector)) {
+    # Gumbel moment match for the scale, sigmau = sqrt(6*var(y))/pi, and a
+    # fixed mildly heavy-tailed start for the shape
+    pvector <- c(sqrt(6 * var(xu - u)) / pi, 0.1)
+  }
+
+  if (is.null(phiu)) {
+    phiu <- nu / n
+  } else if (phiu == 0) {
+    stop("tail probability must be in (0, 1]")
+  }
+
+  nllh <- .nlgpd_internal(pvector, xu, u, phiu)
+  if (is.infinite(nllh)) {
+    pvector[2] <- 0.1
+    nllh <- .nlgpd_internal(pvector, xu, u, phiu)
+  }
+  if (is.infinite(nllh)) {
+    stop("initial parameter values are invalid")
+  }
+
+  fit <- optim(par = as.vector(pvector), fn = .nlgpd_internal, x = xu, u = u,
+               phiu = phiu, finitelik = finitelik, control = control,
+               method = method, hessian = TRUE, ...)
+
+  conv <- TRUE
+  if (fit$convergence != 0 || any(fit$par == pvector) ||
+      abs(fit$value) >= 1e6) {
+    conv <- FALSE
+    warning("check convergence")
+  }
+
+  list(x = as.vector(x), init = as.vector(pvector), optim = fit, conv = conv,
+       mle = fit$par, rate = phiu, nllh = fit$value, n = n, u = u,
+       sigmau = fit$par[1], xi = fit$par[2], phiu = phiu)
+}
+
+#################################################################
 # Section 1: Main Fitting Engine
 #################################################################
 # Fit a Spliced Gamma and GPD Model
-#' @importFrom evmix fgpd
 #' @importFrom methods is
 .fdiscgammagpd <- function(x, useq, shift = NULL, pvector=NULL,
                           std.err = TRUE, method = "Nelder-Mead", ...){
@@ -210,7 +497,7 @@ clonalSizeDistribution <- function(input.data,
     pvector[3] <- as.vector(quantile(x, 0.9))
     
     xu <- x[x>=pvector[3]]
-    initfgpd <- fgpd(xu, min(xu)-10^(-5))
+    initfgpd <- .fgpd_internal(xu, min(xu)-10^(-5))
     pvector[4] <- initfgpd$mle[1]
     pvector[5] <- initfgpd$mle[2]
   }
@@ -238,24 +525,32 @@ clonalSizeDistribution <- function(input.data,
                                             phiu[[i]],
                                             method="Nelder-Mead"),
                             error = function(err) {
-                              pvec3 <- as.vector(quantile(x,1-phiu[[i]]))
-                              xu <- x[x>=pvec3]
-                              initfgpd.adj <-
-                                fgpd(x, min(xu)-10^(-5))
-                              pvec4 <- initfgpd.adj$mle[1]
-                              pvec5 <- initfgpd.adj$mle[2]
-                              tryCatch(expr = .fdiscgpd(c(pvec4,pvec5),
-                                                       x[tail[[i]]],
-                                                       useq[i],
-                                                       phiu[[i]],
-                                                       method="Nelder-Mead"),
-                                       error = function(err2) NA)
+                              tryCatch(expr = {
+                                pvec3 <- as.vector(quantile(x,1-phiu[[i]]))
+                                xu <- x[x>=pvec3]
+                                initfgpd.adj <-
+                                  .fgpd_internal(x, min(xu)-10^(-5))
+                                pvec4 <- initfgpd.adj$mle[1]
+                                pvec5 <- initfgpd.adj$mle[2]
+                                .fdiscgpd(c(pvec4,pvec5),
+                                          x[tail[[i]]],
+                                          useq[i],
+                                          phiu[[i]],
+                                          method="Nelder-Mead")
+                              }, error = function(err2) NA)
                             })
     nllhu[i] <- tryCatch(expr = gammfit[[i]]$value + gpdfit[[i]]$value,
                          error = function(err) NA)
   }
   
   bestfit <- which.min(nllhu)
+  if(length(bestfit) == 0){
+    stop("the spliced gamma-GPD model could not be fit at any threshold in ",
+         "`useq`. This happens when the counts above the threshold carry too ",
+         "little information to identify a tail, for instance when nearly ",
+         "every clone above it is the same size. Supplying a different ",
+         "`threshold` may help.", call. = FALSE)
+  }
   fit.out <- list(gammfit[[bestfit]], gpdfit[[bestfit]])
   names(fit.out) <- c("bulk","tail")
   mle <- c(mean(x >= useq[bestfit]),
@@ -343,10 +638,9 @@ clonalSizeDistribution <- function(input.data,
 }
 
 # Discrete GPD Probability Mass Function
-#' @importFrom evmix pgpd
 .ddiscgpd <- function(x, thresh, sigma, xi, phiu, log = FALSE){
-  up <- pgpd(x+1, u=thresh, sigmau=sigma, xi=xi)
-  down <- pgpd(x, u=thresh, sigmau=sigma, xi=xi)
+  up <- .pgpd_internal(x+1, u=thresh, sigmau=sigma, xi=xi)
+  down <- .pgpd_internal(x, u=thresh, sigmau=sigma, xi=xi)
   
   if(!log){
     phiu*(up-down)
@@ -360,14 +654,12 @@ clonalSizeDistribution <- function(input.data,
   sum(probs)
 }
 
-#' @importFrom evmix qgpd
 .qdiscgpd <- function(p, thresh, sigma, xi, phiu){
-  qgpd(p/phiu, u=thresh, sigmau = sigma, xi=xi) %>% floor
+  .qgpd_internal(p/phiu, u=thresh, sigmau = sigma, xi=xi) %>% floor
 }
 
-#' @importFrom evmix rgpd
 .rdiscgpd <- function(n, thresh, sigma, xi){
-  rgpd(n, u=thresh, sigmau=sigma, xi=xi) %>% floor
+  .rgpd_internal(n, u=thresh, sigmau=sigma, xi=xi) %>% floor
 }
 
 # Spliced Gamma-GPD Probability Mass Function
@@ -437,6 +729,11 @@ clonalSizeDistribution <- function(input.data,
   shape <- exp(param[1])
   rate <- exp(param[2])
   
+  # As in .discgpdnll, keep an unconstrained search inside the valid region
+  if(!is.finite(shape) || shape <= 0 || !is.finite(rate) || rate <= 0){
+    return(Inf)
+  }
+  
   if(any(dat > thresh-1)){ warning("data must be less than the threshold") }
   
   ll <- log(.ddiscgamma(dat, shape, rate, thresh, phiu, shift))
@@ -448,6 +745,15 @@ clonalSizeDistribution <- function(input.data,
 .discgpdnll <- function(param, dat, thresh, phiu){
   sigma <- exp(param[1])
   xi <- param[2]
+  
+  # Nelder-Mead searches log(sigma) unconstrained, so it can underflow sigma
+  # to zero or overflow it to infinity. The likelihood is undefined there, so
+  # report an infinite penalty the optimizer can step away from instead of
+  # raising an error that would discard the whole fit.
+  if(!is.finite(sigma) || sigma <= 0 || !is.finite(xi)){
+    return(Inf)
+  }
+  
   ll <- log(.ddiscgpd(dat, thresh, sigma, xi, phiu))
   
   sum(-ll)
@@ -558,7 +864,6 @@ clonalSizeDistribution <- function(input.data,
 }
 
 # Jensen-Shannon Distance Calculation
-#' @importFrom evmix dgpd
 #' @importFrom methods is
 .JS_spliced <- function(grid, shiftp, shiftq, phip, phiq, shapep, shapeq, ratep,
                         rateq, threshp, threshq, sigmap, sigmaq, xip, xiq){
@@ -610,8 +915,8 @@ clonalSizeDistribution <- function(input.data,
                       log = FALSE)
   adjp <- which(P == 0)
   if(length(adjp) != 0){
-    P[adjp] <- dgpd(adjp+0.5, u=threshp,
-                    sigmau = sigmap, xi = xip, phiu = phip)
+    P[adjp] <- .dgpd_internal(adjp+0.5, u=threshp,
+                              sigmau = sigmap, xi = xip, phiu = phip)
   }
   
   Q <- .ddiscgammagpd(min(grid):K, shape = shapeq, rate = rateq,
@@ -620,8 +925,8 @@ clonalSizeDistribution <- function(input.data,
                       log = FALSE)
   adjq <- which(Q == 0)
   if(length(adjq) != 0){
-    Q[adjq] <- dgpd(adjq+0.5, u=threshq,
-                    sigmau = sigmaq, xi = xiq, phiu = phiq)
+    Q[adjq] <- .dgpd_internal(adjq+0.5, u=threshq,
+                              sigmau = sigmaq, xi = xiq, phiu = phiq)
   }
   
   M <- 0.5*(P+Q)
